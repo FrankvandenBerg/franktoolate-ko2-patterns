@@ -25,8 +25,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             if ($u) {
                 // Do not reveal that the address exists: send a sign-in link instead.
                 if ($u['active']) send_sign_in_link($u, false);
+                log_event((int)$u['id'], 'sign_up_existing', 'sent a sign-in link instead');
             } else {
                 $u = create_user($email, $name, false, false);
+                log_event((int)$u['id'], 'signed_up');
                 send_sign_in_link($u, true);
             }
             $done = true;

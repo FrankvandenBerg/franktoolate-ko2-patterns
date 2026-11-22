@@ -9,7 +9,7 @@ source ./.deploy.env
 B=$(mktemp -d)
 mkdir -p "$B/app"
 cp -r server/lib "$B/lib"
-cp web/index.html web/ko2lib.js "$B/app/"
+mkdir -p "$B/app/ko2" && cp web/index.html web/ko2lib.js "$B/app/ko2/"
 rsync -az --delete --exclude config.local.php -e "${DEPLOY_SSH% *}" "$B/" "${DEPLOY_SSH##* }:$DEPLOY_APP_DIR/"
 rsync -az -e "${DEPLOY_SSH% *}" server/public/index.php "${DEPLOY_SSH##* }:$DEPLOY_DOCROOT/index.php"
 # keep the host's cPanel-generated block at the top of .htaccess, replace the rest with ours

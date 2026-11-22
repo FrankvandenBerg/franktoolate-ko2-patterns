@@ -18,6 +18,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         if (passkey_count((int)$me['id']) <= 1) $err = 'You cannot remove your last passkey. Add another one first.';
         else {
             db()->prepare('DELETE FROM ko_passkeys WHERE id = ? AND user_id = ?')->execute([(int)($_POST['id'] ?? 0), $me['id']]);
+            log_event((int)$me['id'], 'passkey_removed');
             $msg = 'Passkey removed.';
         }
     }

@@ -39,6 +39,7 @@ try {
             if ($label === '') $label = device_label();
             db()->prepare('INSERT INTO ko_passkeys (user_id, credential_id, public_key, alg, sign_count, label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
                 ->execute([$u['id'], b64u_enc($credId), $pem, $alg, $count, $label, now()]);
+            log_event((int)$u['id'], 'passkey_added', $label);
             json_out(['ok' => true, 'redirect' => url('')]);
         }
         case 'login-options': {
@@ -54,12 +55,14 @@ try {
             $st = db()->prepare('SELECT p.*, u.active FROM ko_passkeys p JOIN ko_users u ON u.id = p.user_id WHERE p.credential_id = ?');
             $st->execute([(string)($in['id'] ?? '')]);
             $pk = $st->fetch();
+            if (!$pk || !$pk['active']) { log_event($pk ? (int)$pk['user_id'] : null, 'sign_in_failed', 'unknown or disabled passkey'); }
             if (!$pk || !$pk['active']) json_out(['error' => 'This passkey is not linked to an active account.'], 401);
             $count = webauthn_verify_assertion($in, $challenge, $pk['public_key'], (int)$pk['alg'], (int)$pk['sign_count']);
             db()->prepare('UPDATE ko_passkeys SET sign_count = ?, last_used_at = ? WHERE id = ?')->execute([$count, now(), $pk['id']]);
             $st = db()->prepare('SELECT * FROM ko_users WHERE id = ?');
             $st->execute([$pk['user_id']]);
             log_in($st->fetch());
+            log_event((int)$pk['user_id'], 'signed_in', 'passkey: ' . $pk['label']);
             json_out(['ok' => true, 'redirect' => url('')]);
         }
         default:

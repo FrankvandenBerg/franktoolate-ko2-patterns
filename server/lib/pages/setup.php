@@ -18,7 +18,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = 'Enter a valid email address.';
     } else {
-        log_in(create_user($email, $name, true, true));
+        $u = create_user($email, $name, true, true);
+        log_in($u);
+        log_event((int)$u['id'], 'signed_up', 'first admin via setup');
         redirect('passkey');
     }
 }

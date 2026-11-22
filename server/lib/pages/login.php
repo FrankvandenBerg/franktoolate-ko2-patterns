@@ -16,6 +16,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $u = filter_var($email, FILTER_VALIDATE_EMAIL) ? find_user_by_email($email) : null;
         // Same answer whether or not the account exists.
         if ($u && $u['active']) {
+            log_event((int)$u['id'], 'link_requested');
             try { send_sign_in_link($u, false); } catch (Throwable $e) { error_log('kostudio mail: ' . $e->getMessage()); }
         }
         $sent = true;

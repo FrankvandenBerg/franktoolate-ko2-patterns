@@ -30,3 +30,28 @@ details.fallback{display:flex;flex-direction:column;gap:10px}
 details.fallback summary{cursor:pointer;font-size:13px;color:var(--muted);text-decoration:underline;width:max-content}
 details.fallback summary:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
 details.fallback[open] summary{margin-bottom:10px}
+.box.wide{max-width:1040px}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--line)}
+.tabs a{padding:8px 12px;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--orange);font-weight:600}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:4px}
+.tile b{font-size:28px;font-weight:800;font-variant-numeric:tabular-nums}
+.tile span{font-size:12px;color:var(--muted)}
+.pill{display:inline-block;font:500 11px "IBM Plex Mono",ui-monospace,monospace;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);vertical-align:middle}
+.pill.good{border-color:#2a9d6a;color:#2a9d6a}
+.pill.bad{border-color:var(--err);color:var(--err)}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+form.row{flex-direction:row}
+form.inline{display:inline-flex;gap:6px;align-items:center;background:none;border:0;padding:0}
+select{font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+.facts{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:0;font-size:13px}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0}
+.list{margin:0;padding-left:18px;line-height:1.8}
+.tools{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.tool{display:flex;flex-direction:column;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;color:var(--ink);text-decoration:none}
+.tool:hover{border-color:var(--orange)}
+.tool span{color:var(--muted);font-size:13px}
+button.link{background:none;border:0;padding:0;color:var(--ink);text-decoration:underline;font-weight:400;font-size:13px}
+a{color:var(--ink)}
