@@ -96,6 +96,8 @@ td.dim{color:var(--muted)}
 .pill.live[hidden]{display:none}
 .note .nn{position:absolute;left:3px;top:-1px;font:600 8px/10px var(--mono);color:#fff;white-space:nowrap;pointer-events:none;text-shadow:0 0 2px rgba(0,0,0,.4)}
 .note.pitched{overflow:hidden}
+.lab .keys.ok{border-color:#2a9d6a;color:#2a9d6a}
+.lab .keys.warn{border-color:var(--orange);color:var(--orange)}
 .lab .keys{font:500 9px var(--mono);border:1px solid var(--line);border-radius:3px;padding:0 3px;color:var(--muted)}
 .rollgrid.editing .lane{cursor:crosshair}
 .rollgrid.editing .note{cursor:grab;touch-action:none}
@@ -219,7 +221,7 @@ const $ = s => document.querySelector(s);
 const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null, selScene = null, focusSel = null, libOpen = false, editGroup = null, noteSel = -1;
 const openRolls = new Set(); let rollsTouched = false;
 // Following the K.O. II's own playback via its MIDI clock (24 per quarter note) and start/stop.
-let pitchMode = false;
+let pitchMode = true;   // confirmed on the device: a pad with its own MIDI channel plays the note it receives
 let view = 'projects', sounds = [], soundsQuery = '', soundsFilter = 'all', deviceSerial = null, sndDirNode = 1000, playingSound = null;
 const follow = { running: false, clocks: 0, raf: 0, lastNote: 0, heard: [], followScenes: true, guess: null }; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
 let projDirNode = 2000, DATA = [], soundNames = {}, cur = 0, sel = null, dev = null, player = null, playing = null; // playing: {kind:'pat'|'scene', key}
@@ -533,7 +535,9 @@ function drawRoll(g){
     const ps = x.ev.filter(e => e[0] === pd).map(e => e[4]);
     const hi = pitched ? Math.max(...ps) : 60, lo = pitched ? Math.min(...ps) : 60, span = hi - lo;
     const laneH = pitched ? Math.max(22, span * 6 + 16) : 22;
-    h += `<div class="lab${sid ? '' : ' nosample'}" title="${name}" style="height:${laneH}px">pad ${KO2Lib.PAD_LABELS[pd] ?? pd + 1}${pitched ? ` <span class="keys">${span ? noteName(lo) + '–' + noteName(hi) : noteName(lo)}</span>` : ''} <em>${name}</em></div><div class="lane" data-pad="${pd}"${pitched ? ` data-hi="${hi}"` : ''} style="background-image:${bg};height:${laneH}px">`;
+    const chan = (p.padCh || {})[x.g.toLowerCase() + (pd + 1)] || 0;
+    const chTip = chan ? `Plays at pitch from the tool via MIDI channel ${chan}` : 'The tool plays this pad at its root note. Give the pad its own MIDI channel on the K.O. II (Shift + Sound → MIDI page → knob X) to hear the pitches.';
+    h += `<div class="lab${sid ? '' : ' nosample'}" title="${name}" style="height:${laneH}px">pad ${KO2Lib.PAD_LABELS[pd] ?? pd + 1}${pitched ? ` <span class="keys${chan ? ' ok' : ' warn'}" title="${chTip}">${span ? noteName(lo) + '–' + noteName(hi) : noteName(lo)}${chan ? ' · ch' + chan : ' · root only'}</span>` : ''} <em>${name}</em></div><div class="lane" data-pad="${pd}"${pitched ? ` data-hi="${hi}"` : ''} style="background-image:${bg};height:${laneH}px">`;
     x.ev.forEach((e, i) => {
       if (e[0] !== pd) return;
       const l = e[1] / len * 100, w = Math.max(e[2], 12) / len * 100;
