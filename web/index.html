@@ -188,6 +188,7 @@ $('#connect').addEventListener('click', async () => {
     dev = await KO2.connect();
     player = new Player(dev.output);
     dev.onRealtime = onDeviceMidi;
+    dev.onFileEvent = onDeviceFileEvent;
     player.onTick = (f, seg) => { document.querySelectorAll('.pos').forEach((el, i) => el.classList.toggle('now', f != null && playing && playing.kind === 'song' && i === seg)); const g = document.querySelector('.rollgrid'); const ph = document.querySelector('.playhead'); if (!g || !ph) return; ph.hidden = f == null || !showHead(); if (f != null) g.style.setProperty('--ph', f); };
     const info = await dev.greet();
     $('#meta').innerHTML = `${info.product||'EP-133'} · OS ${info.os_version||'?'}<br>serial ${info.serial||'?'}`;
@@ -205,7 +206,9 @@ $('#connect').addEventListener('click', async () => {
       const tar = await dev.get(p.node, (g, t) => progress((i + g / t) / projects.length));
       out.push(makeProject(p.name, tar, p.node));
     }
-    DATA = out; sel = null; render();
+    DATA = out; sel = null;
+    try { deviceActiveNode = (await dev.metadata(projDir.node)).active ?? null; const i = DATA.findIndex(p => p.node === deviceActiveNode); if (i >= 0) cur = i; } catch {}
+    render();
     status('Fetching sample names…');
     const sounds = sndDir ? await dev.ls(sndDir.node) : [];
     const byId = {}; sounds.forEach(s => { const id = parseInt(s.name, 10); if (id) byId[id] = s.node; });
@@ -244,7 +247,7 @@ function render(){
   const nav = $('#projects'); nav.hidden = false;
   nav.innerHTML = DATA.map((p, i) => {
     const n = p.scenes.length;
-    return `<button class="pbtn" aria-pressed="${i===cur}" data-i="${i}"><b>${p.p}</b><small>${p.changes && p.changes.length ? '● edited' : (n ? n + ' scene' + (n === 1 ? '' : 's') : 'empty')}</small></button>`;
+    return `<button class="pbtn" aria-pressed="${i===cur}" data-i="${i}"><b>${p.p}${p.node && p.node === deviceActiveNode ? ' ●' : ''}</b><small>${p.changes && p.changes.length ? '● edited' : (n ? n + ' scene' + (n === 1 ? '' : 's') : 'empty')}</small></button>`;
   }).join('');
   const p = DATA[cur], card = $('#project'); card.hidden = false;
   const pad2 = n => String(n).padStart(2, '0');
@@ -252,7 +255,8 @@ function render(){
   let h = `<div class="ph"><h2>Project ${p.p}</h2>
     <span class="stat"><b>${p.bpm ?? '–'}</b> BPM</span>
     <span class="stat"><b>${p.scenes.length}</b> scene${p.scenes.length === 1 ? '' : 's'}</span>
-    <span class="stat"><b>${p.pats.filter(x => x.notes).length}</b> patterns with notes</span></div>`;
+    <span class="stat"><b>${p.pats.filter(x => x.notes).length}</b> patterns with notes</span>
+    ${dev && p.node ? (deviceActiveNode === p.node ? '<span class="pill live">● active on the K.O. II</span>' : '<button class="play" id="openOnDevice" title="Switch the K.O. II to this project">open on K.O. II</button>') : ''}</div>`;
   if (p.changes.length) {
     h += `<div class="pending"><strong>${p.changes.length} change${p.changes.length===1?'':'s'}, not yet on the K.O. II</strong>
       <ul>${p.changes.map(c => `<li>${c}</li>`).join('')}</ul>
@@ -652,6 +656,21 @@ function pickScene(n){
   selScene = n; sel = null; noteSel = -1;
   if (playing && playing.kind === 'scene') playScene(n, false); else render();
 }
+// The K.O. II reports when you switch project on the device: follow it in the tool.
+let deviceActiveNode = null;
+function onDeviceFileEvent(e){
+  if (e.type !== 'metadata' || e.node !== projDirNode || typeof e.meta.active !== 'number') return;
+  deviceActiveNode = e.meta.active;
+  const i = DATA.findIndex(p => p.node === e.meta.active);
+  if (i >= 0 && i !== cur && !DATA[cur].changes.length) { stopPlay(); cur = i; sel = null; selScene = null; focusSel = null; status(`The K.O. II switched to project ${DATA[i].p}; the tool follows.`); }
+  else if (i >= 0) status(`The K.O. II is now on project ${DATA[i].p}.`);
+  render();
+}
+async function openOnDevice(){
+  const p = DATA[cur]; if (!dev || !p.node) return;
+  try { await dev.setMetadata(projDirNode, { active: p.node }); deviceActiveNode = p.node; status(`Project ${p.p} is now active on the K.O. II.`); render(); }
+  catch (e) { status('Could not switch project: ' + (e.message || e), true); }
+}
 function onDeviceMidi(d){
   const st = d[0];
   if (st === 0xFA) { follow.running = true; follow.clocks = 0; showFollow(); }
@@ -701,6 +720,7 @@ function playSelected(){
 document.addEventListener('click', ev => {
   if (ev.target.closest('#mvGo')) { applyMove($('#mvFrom').value, $('#mvG').value, +$('#mvN').value); return; }
   if (ev.target.closest('#writeProj')) { writeProject(); return; }
+  if (ev.target.closest('#openOnDevice')) { openOnDevice(); return; }
   if (ev.target.closest('#editToggle')) { editMode = !editMode; noteSel = -1; drawRoll(); return; }
   if (ev.target.closest('#edDel')) { deleteSelectedNote(); return; }
   if (ev.target.closest('#dlProj')) { saveFile(DATA[cur].tar, `KO2-P${DATA[cur].p}-edited-${stamp()}.tar`); return; }

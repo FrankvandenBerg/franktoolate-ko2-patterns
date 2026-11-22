@@ -53,7 +53,18 @@
     _handle(d) {
       if (d[0] !== 0xf0) { this.onRealtime && this.onRealtime(d); return; }
       if (d[0] !== 0xf0 || d[1] !== TE[0] || d[2] !== TE[1] || d[3] !== TE[2] || d[5] !== 0x40) return;
-      if (d[6] & 0x40) return; // a request, not a response
+      if (d[6] & 0x40) {
+        // Unsolicited event from the device (after subscribing in fsInit), e.g. the active project changed.
+        if (d[8] === CMD_FILE && this.onFileEvent) {
+          const data = unpack7(d.subarray(9, d.length - 1));
+          if (data[0] === 3) { // metadata updated: node id + JSON
+            const node = be16(data, 1);
+            let meta = {}; try { meta = JSON.parse(cstr(data, 3)[0]); } catch {}
+            this.onFileEvent({ type: 'metadata', node, meta });
+          } else this.onFileEvent({ type: data[0], data });
+        }
+        return;
+      }
       const rid = ((d[6] & 0x1f) << 7) | (d[7] & 0x7f);
       const p = this.pending.get(rid);
       if (!p) return;
@@ -82,7 +93,8 @@
     }
 
     async fsInit() {
-      const r = await this.req(CMD_FILE, [1, 0, 0x00, 0x40, 0x00, 0x00]);
+      // flag 1 = subscribe to file events (the device then reports project changes)
+      const r = await this.req(CMD_FILE, [1, 1, 0x00, 0x40, 0x00, 0x00]);
       this.chunk = r.length >= 5 ? be32(r, 1) : 512;
       return this.chunk;
     }
