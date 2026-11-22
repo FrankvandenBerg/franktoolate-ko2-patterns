@@ -193,6 +193,9 @@ a.play{text-decoration:none;display:inline-block}
 .tl-pos b{font-family:var(--mono);font-size:14px}
 .tl-pos small{font-family:var(--mono);font-size:10px;color:var(--muted)}
 .tl-pos.now{background:hsl(var(--h) 60% 55% / .7);box-shadow:0 0 0 2px var(--ink)}
+.tl-head{position:absolute;top:0;bottom:0;width:3px;background:var(--ink);left:calc(var(--tp,0) * 100%);pointer-events:none;z-index:2;box-shadow:0 0 0 1px var(--panel)}
+.timeline::before{content:"";position:absolute;left:0;top:0;bottom:0;width:calc(var(--tp,0) * 100%);background:color-mix(in srgb,var(--ink) 8%,transparent);pointer-events:none;z-index:1}
+.tl-now{color:var(--ink)}
 .tl-axis{display:flex;justify-content:space-between;font:11px var(--mono);color:var(--muted)}
 .focus{outline:2px solid var(--orange)!important;outline-offset:2px}
 .chan[data-chan]{cursor:pointer}
@@ -532,13 +535,28 @@ function songTimeline(p){
   const bars = p.song.map(n => Math.max(1, ...sceneParts(p, n).map(q => q.bars || 1)));
   const total = bars.reduce((a, b) => a + b, 0);
   const hue = n => (n * 47) % 360;
-  let h = `<div class="timeline">`, at = 0;
+  let h = `<div class="timeline" id="timeline" data-total="${total}">`, at = 0;
   p.song.forEach((n, i) => {
     h += `<button class="tl-pos" data-goto-scene="${n}" style="left:${at / total * 100}%;width:calc(${bars[i] / total * 100}% - 4px);--h:${hue(n)}" title="Position ${i + 1}: scene ${String(n).padStart(2, '0')}, ${bars[i]} bar${bars[i] === 1 ? '' : 's'} · click to open the scene"><b>${String(n).padStart(2, '0')}</b><small>${i + 1}</small></button>`;
     at += bars[i];
   });
-  h += `</div><div class="tl-axis"><span>bar 1</span><span>${total} bars · ${p.bpm ? Math.round(total * 4 * 60 / p.bpm) + ' s at ' + p.bpm + ' BPM' : ''}</span></div>`;
+  h += `<div class="tl-head" hidden></div></div><div class="tl-axis"><span class="tl-now" id="tlNow">bar 1</span><span>${total} bars · ${p.bpm ? Math.round(total * 4 * 60 / p.bpm) + ' s at ' + p.bpm + ' BPM' : ''}</span></div>`;
   return h;
+}
+// Song progress bar: t = song time in 96-ppqn ticks (null = hide).
+function updateSongProgress(t, source){
+  const tl = document.getElementById('timeline'); if (!tl) return;
+  const head = tl.querySelector('.tl-head'), label = document.getElementById('tlNow');
+  const totalBars = +tl.dataset.total, total = totalBars * TPB;
+  if (t == null || !total) { head.hidden = true; tl.style.removeProperty('--tp'); if (label) label.textContent = 'bar 1'; return; }
+  const tt = ((t % total) + total) % total;
+  head.hidden = false; tl.style.setProperty('--tp', tt / total);
+  // which position are we in?
+  const p = DATA[cur]; let at = 0, pos = 0;
+  const bars = p.song.map(n => Math.max(1, ...sceneParts(p, n).map(q => q.bars || 1)));
+  for (let i = 0; i < bars.length; i++) { if (tt < (at + bars[i]) * TPB) { pos = i; break; } at += bars[i]; }
+  if (label) label.textContent = `▶ ${source} · bar ${Math.floor(tt / TPB) + 1} of ${totalBars} · position ${pos + 1} (scene ${String(p.song[pos]).padStart(2, '0')})`;
+  document.querySelectorAll('.tl-pos').forEach((el, i) => el.classList.toggle('now', i === pos));
 }
 function songHtml(p){
   const editable = !!p.songEditable;
@@ -1147,7 +1165,7 @@ function scheduleFollowFrame(){ if (!follow.raf) follow.raf = requestAnimationFr
 function showFollow(){
   document.querySelectorAll('.followBadge').forEach(b => b.hidden = !follow.running);
   if (!follow.running) {
-    if (!playing) updateCycle(null);
+    if (!playing) { updateCycle(null); updateSongProgress(null); }
     document.querySelectorAll('.note.hit').forEach(n => n.classList.remove('hit'));
     if (!playing) document.querySelectorAll('.playhead').forEach(ph => ph.hidden = true);
   }
@@ -1157,6 +1175,7 @@ function drawFollow(){
   if (!follow.running || playing) return;
   const p = DATA[cur]; if (!p) return;
   updateCycle(follow.clocks * 4);
+  if (p.song.length > 1) updateSongProgress(follow.clocks * 4, 'K.O. II');
   document.querySelectorAll('.roll[data-g]').forEach(el => {
     const x = patFor(p, el.dataset.g), g = el.querySelector('.rollgrid'), ph = el.querySelector('.playhead');
     if (!x || !g || !ph) return;
@@ -1179,6 +1198,7 @@ function updatePlayheads(f, seg){
     if (t != null) g.style.setProperty('--ph', (t % +g.dataset.len) / +g.dataset.len);
   });
   updateCycle(playing && playing.kind === 'scene' ? t : null);
+  updateSongProgress(playing && playing.kind === 'song' && f != null ? f * player.loopTicks : null, 'tool');
 }
 function isPlaying(kind, key){ return !!playing && playing.kind === kind && playing.key === key; }
 function showHead(){ return playing && playing.kind === 'pat' && playing.key === cur + ':' + sel; }
