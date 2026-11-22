@@ -1,19 +1,19 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Admin area: overview, users (with detail and activity), tools and access.
+// Admin area: overview, users (with detail and activity) and the activity log.
 declare(strict_types=1);
 
 $me = current_user();
 if (!$me) redirect('login');
 if (!$me['is_admin']) { http_response_code(403); page('No access', '<h1>No access</h1><p>Only admins can open this page.</p>'); exit; }
 
-$sub = trim(substr($route, strlen('admin')), '/');   // '', 'users', 'user', 'tools', 'activity'
+$sub = trim(substr($route, strlen('admin')), '/');   // '', 'users', 'user', 'activity'
 $msg = ''; $err = '';
 
 const EVENT_LABELS = [
     'signed_up' => 'Signed up', 'sign_up_existing' => 'Tried to sign up again', 'email_confirmed' => 'Confirmed email',
     'signed_in' => 'Signed in', 'sign_in_failed' => 'Sign-in failed', 'signed_out' => 'Signed out', 'link_requested' => 'Asked for a sign-in link',
-    'passkey_added' => 'Added a passkey', 'passkey_removed' => 'Removed a passkey', 'tool_opened' => 'Opened a tool',
+    'passkey_added' => 'Added a passkey', 'passkey_removed' => 'Removed a passkey', 'tool_opened' => 'Opened the tool',
     'admin_change' => 'Changed by an admin',
 ];
 
@@ -40,13 +40,13 @@ function events_table(array $rows, bool $withUser): string {
     return $h . '</tbody></table></div>';
 }
 function admin_nav(string $sub): string {
-    $items = ['' => 'Overview', 'users' => 'Users', 'tools' => 'Tools', 'activity' => 'Activity'];
+    $items = ['' => 'Overview', 'users' => 'Users', 'activity' => 'Activity'];
     $h = '<nav class="tabs" aria-label="Admin">';
     foreach ($items as $k => $label) {
         $active = $sub === $k || ($sub === 'user' && $k === 'users');
         $h .= '<a href="' . h(url('admin' . ($k ? '/' . $k : ''))) . '"' . ($active ? ' aria-current="page"' : '') . '>' . $label . '</a>';
     }
-    return '<nav class="top"><a href="' . h(url()) . '">← Tools</a><a href="' . h(url('account')) . '">My account</a></nav><h1>Admin</h1>' . $h . '</nav>';
+    return '<nav class="top"><a href="' . h(url()) . '">← Back to the tool</a><a href="' . h(url('account')) . '">My account</a></nav><h1>Admin</h1>' . $h . '</nav>';
 }
 function post_form(string $action, array $fields, string $label, string $cls = 'sec', string $extra = ''): string {
     $h = '<form method="post" action="' . h($action) . '" class="inline">' . csrf_field();
@@ -68,10 +68,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             log_event((int)$nu['id'], 'admin_change', 'invited by ' . $me['email']);
             send_sign_in_link($nu, true);
             $msg = 'Invitation sent to ' . $email . '.';
-        } elseif (in_array($action, ['toggle_active', 'toggle_admin', 'link', 'delete', 'access'], true)) {
+        } elseif (in_array($action, ['toggle_active', 'toggle_admin', 'link', 'delete'], true)) {
             $t = user_by_id($id);
             if (!$t) throw new RuntimeException('That account no longer exists.');
-            if ($id === (int)$me['id'] && $action !== 'link' && $action !== 'access') throw new RuntimeException('You cannot block, demote or delete your own account.');
+            if ($id === (int)$me['id'] && $action !== 'link') throw new RuntimeException('You cannot block, demote or delete your own account.');
             if ($action === 'toggle_active') {
                 db()->prepare('UPDATE ko_users SET active = 1 - active WHERE id = ?')->execute([$id]);
                 log_event($id, 'admin_change', ($t['active'] ? 'blocked' : 'unblocked') . ' by ' . $me['email']);
@@ -84,41 +84,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 send_sign_in_link($t, !$t['email_verified_at']);
                 log_event($id, 'admin_change', 'sign-in link sent by ' . $me['email']);
                 $msg = 'Sign-in link sent to ' . $t['email'] . '.';
-            } elseif ($action === 'access') {
-                $want = array_map('intval', (array)($_POST['tools'] ?? []));
-                db()->prepare('DELETE FROM ko_tool_access WHERE user_id = ?')->execute([$id]);
-                $ins = db()->prepare('INSERT INTO ko_tool_access (user_id, tool_id, granted_at) VALUES (?, ?, ?)');
-                foreach (array_unique($want) as $tid) $ins->execute([$id, $tid, now()]);
-                log_event($id, 'admin_change', 'tool access updated by ' . $me['email']);
-                $msg = 'Tool access saved.';
             } elseif ($action === 'delete') {
                 if (empty($_POST['confirm'])) throw new RuntimeException('Tick "sure" to delete an account.');
-                foreach (['ko_passkeys', 'ko_tokens', 'ko_tool_access', 'ko_sound_cache', 'ko_backups'] as $tbl) db()->prepare("DELETE FROM $tbl WHERE user_id = ?")->execute([$id]);
+                foreach (['ko_passkeys', 'ko_tokens', 'ko_sound_cache', 'ko_backups'] as $tbl) db()->prepare("DELETE FROM $tbl WHERE user_id = ?")->execute([$id]);
                 foreach (glob(KO_HOME . '/data/backups/' . $id . '/*.tar') ?: [] as $f) @unlink($f);
                 @rmdir(KO_HOME . '/data/backups/' . $id);
                 db()->prepare('DELETE FROM ko_users WHERE id = ?')->execute([$id]);
                 log_event(null, 'admin_change', 'deleted ' . $t['email'] . ' by ' . $me['email']);
                 $msg = 'Account deleted.';
                 if ($sub === 'user') { $_SESSION['flash'] = $msg; redirect('admin/users'); }
-            }
-        } elseif ($action === 'tool_save' || $action === 'tool_add') {
-            $slug = strtolower(trim((string)($_POST['slug'] ?? '')));
-            $name = trim((string)($_POST['name'] ?? ''));
-            $desc = trim((string)($_POST['description'] ?? ''));
-            $access = in_array($_POST['access'] ?? '', ['everyone', 'selected', 'admins'], true) ? $_POST['access'] : 'everyone';
-            $status = in_array($_POST['status'] ?? '', ['live', 'hidden'], true) ? $_POST['status'] : 'hidden';
-            $sort = (int)($_POST['sort'] ?? 0);
-            if ($name === '') throw new RuntimeException('Give the tool a name.');
-            if ($action === 'tool_add') {
-                if (!preg_match('~^[a-z0-9-]{2,40}$~', $slug) || in_array($slug, ['admin', 'login', 'logout', 'register', 'link', 'passkey', 'setup', 'account'], true))
-                    throw new RuntimeException('Use a short address of lowercase letters, digits and dashes (not a reserved word).');
-                db()->prepare('INSERT INTO ko_tools (slug, name, description, access, status, sort, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-                    ->execute([$slug, $name, $desc, $access, $status, $sort, now()]);
-                $msg = 'Tool added. Upload its files to app/' . $slug . '/ on the server.';
-            } else {
-                db()->prepare('UPDATE ko_tools SET name = ?, description = ?, access = ?, status = ?, sort = ? WHERE id = ?')
-                    ->execute([$name, $desc, $access, $status, $sort, $id]);
-                $msg = 'Tool saved.';
             }
         }
     } catch (PDOException $e) {
@@ -135,7 +109,6 @@ if (!empty($_SESSION['flash'])) { $msg = $_SESSION['flash']; unset($_SESSION['fl
 $notice = ($msg ? '<div class="ok" role="status">' . h($msg) . '</div>' : '') . ($err ? '<div class="err" role="alert">' . h($err) . '</div>' : '');
 
 $db = db();
-$allTools = $db->query('SELECT * FROM ko_tools ORDER BY sort, name')->fetchAll();
 
 // ---------- pages ----------
 if ($sub === '') {
@@ -146,7 +119,7 @@ if ($sub === '') {
         ['New, last 30 days', $count('SELECT COUNT(*) FROM ko_users WHERE created_at > ?', [ago(30 * 86400)])],
         ['Waiting to finish sign-up', $count('SELECT COUNT(*) FROM ko_users u WHERE active = 1 AND (email_verified_at IS NULL OR NOT EXISTS (SELECT 1 FROM ko_passkeys p WHERE p.user_id = u.id))')],
         ['Blocked', $count('SELECT COUNT(*) FROM ko_users WHERE active = 0')],
-        ['Tool visits, last 7 days', $count("SELECT COUNT(*) FROM ko_events WHERE type = 'tool_opened' AND created_at > ?", [ago(7 * 86400)])],
+        ['Visits to the tool, last 7 days', $count("SELECT COUNT(*) FROM ko_events WHERE type = 'tool_opened' AND created_at > ?", [ago(7 * 86400)])],
     ];
     $th = '<div class="tiles">';
     foreach ($tiles as [$l, $v]) $th .= '<div class="tile"><b>' . $v . '</b><span>' . h($l) . '</span></div>';
@@ -186,7 +159,7 @@ if ($sub === 'users') {
   <label for="f">Show<select id="f" name="f">' . $opt('', 'Everyone') . $opt('pending', 'Waiting to finish sign-up') . $opt('admins', 'Admins') . $opt('blocked', 'Blocked') . '</select></label>
   <button class="sec">Filter</button>
 </form>
-<div class="tbl"><table><thead><tr><th>Name / email</th><th>Role</th><th>Status</th><th>Signed up</th><th>Last sign-in</th><th>Tool visits</th></tr></thead><tbody>' . ($rows ?: '<tr><td colspan="6">No accounts match.</td></tr>') . '</tbody></table></div>
+<div class="tbl"><table><thead><tr><th>Name / email</th><th>Role</th><th>Status</th><th>Signed up</th><th>Last sign-in</th><th>Visits</th></tr></thead><tbody>' . ($rows ?: '<tr><td colspan="6">No accounts match.</td></tr>') . '</tbody></table></div>
 <form method="post" action="' . h(url('admin/users')) . '">' . csrf_field() . '
   <h2>Invite someone</h2>
   <p>They get an email to confirm their address and create a passkey. People can also sign up themselves.</p>
@@ -209,16 +182,6 @@ if ($sub === 'user') {
     $pks = $st->fetchAll();
     $pkRows = '';
     foreach ($pks as $p) $pkRows .= '<tr><td>' . h($p['label']) . '</td><td class="mono">' . fmt_time($p['created_at']) . '</td><td class="mono">' . fmt_time($p['last_used_at']) . '</td></tr>';
-    $st = $db->prepare('SELECT tool_id FROM ko_tool_access WHERE user_id = ?');
-    $st->execute([$id]);
-    $granted = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
-    $toolRows = '';
-    foreach ($allTools as $tl) {
-        $note = $tl['access'] === 'everyone' ? 'open to everyone' : ($tl['access'] === 'admins' ? 'admins only' : 'only selected people');
-        $dis = $tl['access'] !== 'selected' ? ' disabled' : '';
-        $chk = ($tl['access'] === 'everyone' || in_array((int)$tl['id'], $granted, true) || ($tl['access'] === 'admins' && $t['is_admin'])) ? ' checked' : '';
-        $toolRows .= '<label class="check"><input type="checkbox" name="tools[]" value="' . (int)$tl['id'] . '"' . $chk . $dis . '> ' . h($tl['name']) . ' <span class="mono">(' . $note . ($tl['status'] !== 'live' ? ', hidden' : '') . ')</span></label>';
-    }
     $st = $db->prepare('SELECT e.*, u.name, u.email FROM ko_events e LEFT JOIN ko_users u ON u.id = e.user_id WHERE e.user_id = ? ORDER BY e.id DESC LIMIT 100');
     $st->execute([$id]);
     $act = url('admin/user?id=' . $id);
@@ -239,55 +202,7 @@ if ($sub === 'user') {
 ' . $actions . '
 <h2>Passkeys</h2>
 ' . ($pkRows ? '<div class="tbl"><table><thead><tr><th>Name</th><th>Created</th><th>Last used</th></tr></thead><tbody>' . $pkRows . '</tbody></table></div>' : '<p>No passkeys yet.</p>') . '
-<form method="post" action="' . h($act) . '">' . csrf_field() . '
-  <h2>Tool access</h2>
-  <p>Tools open to everyone are always available. Tick the tools set to "only selected people" that this person may use.</p>
-  <input type="hidden" name="action" value="access"><input type="hidden" name="id" value="' . $id . '">
-  ' . ($toolRows ?: '<p>No tools yet.</p>') . '
-  <button type="submit" class="sec">Save tool access</button>
-</form>
 <h2>Activity</h2>' . events_table($st->fetchAll(), false) . '</div>');
-    exit;
-}
-
-if ($sub === 'tools') {
-    $cards = '';
-    $sel = fn(string $name, array $opts, string $cur) => '<select name="' . $name . '">' . implode('', array_map(fn($k, $l) => '<option value="' . $k . '"' . ($cur === $k ? ' selected' : '') . '>' . $l . '</option>', array_keys($opts), $opts)) . '</select>';
-    $accessOpts = ['everyone' => 'Everyone with an account', 'selected' => 'Only selected people', 'admins' => 'Admins only'];
-    $statusOpts = ['live' => 'Live', 'hidden' => 'Hidden (admins only)'];
-    foreach ($allTools as $tl) {
-        $st = $db->prepare("SELECT COUNT(*) FROM ko_events WHERE type = 'tool_opened' AND detail = ? AND created_at > ?");
-        $st->execute([$tl['slug'], ago(30 * 86400)]);
-        $visits = (int)$st->fetchColumn();
-        $st = $db->prepare('SELECT COUNT(*) FROM ko_tool_access WHERE tool_id = ?');
-        $st->execute([$tl['id']]);
-        $grants = (int)$st->fetchColumn();
-        $installed = is_file(KO_HOME . '/app/' . $tl['slug'] . '/index.html');
-        $cards .= '<form method="post" action="' . h(url('admin/tools')) . '">' . csrf_field() . '
-  <input type="hidden" name="action" value="tool_save"><input type="hidden" name="id" value="' . (int)$tl['id'] . '">
-  <h2><a href="' . h(url($tl['slug'] . '/')) . '">/' . h($tl['slug']) . '/</a> ' . ($installed ? '' : '<span class="pill bad">files missing</span>') . '</h2>
-  <p class="mono">' . $visits . ' visits in the last 30 days · ' . $grants . ' people given access</p>
-  <label>Name<input type="text" name="name" value="' . h($tl['name']) . '" required></label>
-  <label>Description<input type="text" name="description" value="' . h($tl['description']) . '"></label>
-  <div class="row"><label>Who can use it' . $sel('access', $accessOpts, $tl['access']) . '</label>
-  <label>Status' . $sel('status', $statusOpts, $tl['status']) . '</label>
-  <label>Order<input type="text" name="sort" value="' . (int)$tl['sort'] . '" inputmode="numeric" style="width:5em"></label></div>
-  <button type="submit" class="sec">Save</button>
-</form>';
-    }
-    page('Tools', '<div class="box wide">' . admin_nav($sub) . $notice . $cards . '
-<form method="post" action="' . h(url('admin/tools')) . '">' . csrf_field() . '
-  <h2>Add a tool</h2>
-  <p>Register a new tool here, then upload its files (at least <span class="mono">index.html</span>) to <span class="mono">app/&lt;address&gt;/</span> on the server. New tools start hidden, so only admins see them until you set them live.</p>
-  <input type="hidden" name="action" value="tool_add">
-  <label>Address (lowercase, e.g. op-1-tool)<input type="text" name="slug" required pattern="[a-z0-9-]{2,40}"></label>
-  <label>Name<input type="text" name="name" required></label>
-  <label>Description<input type="text" name="description"></label>
-  <div class="row"><label>Who can use it' . $sel('access', $accessOpts, 'selected') . '</label>
-  <label>Status' . $sel('status', $statusOpts, 'hidden') . '</label>
-  <label>Order<input type="text" name="sort" value="20" inputmode="numeric" style="width:5em"></label></div>
-  <button type="submit">Add tool</button>
-</form></div>');
     exit;
 }
 

@@ -83,23 +83,6 @@ function migrate(PDO $pdo): void {
         ip VARCHAR(64) NOT NULL DEFAULT '',
         created_at DATETIME NOT NULL
     )");
-    // Tools offered to users, and who may use them
-    $pdo->exec("CREATE TABLE IF NOT EXISTS ko_tools (
-        id $id,
-        slug VARCHAR(40) NOT NULL UNIQUE,
-        name VARCHAR(100) NOT NULL,
-        description VARCHAR(255) NOT NULL DEFAULT '',
-        access VARCHAR(20) NOT NULL DEFAULT 'everyone',
-        status VARCHAR(20) NOT NULL DEFAULT 'live',
-        sort INT NOT NULL DEFAULT 0,
-        created_at DATETIME NOT NULL
-    )");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS ko_tool_access (
-        user_id INT NOT NULL,
-        tool_id INT NOT NULL,
-        granted_at DATETIME NOT NULL,
-        PRIMARY KEY (user_id, tool_id)
-    )");
     // Per user and device: cached list of the sounds on the K.O. II, so it does not have to be read over MIDI every time
     $text = $isMysql ? 'MEDIUMTEXT' : 'TEXT';
     $pdo->exec("CREATE TABLE IF NOT EXISTS ko_sound_cache (
@@ -120,10 +103,6 @@ function migrate(PDO $pdo): void {
         note VARCHAR(190) NOT NULL DEFAULT '',
         created_at DATETIME NOT NULL
     )");
-    if ((int)$pdo->query('SELECT COUNT(*) FROM ko_tools')->fetchColumn() === 0) {
-        $pdo->prepare('INSERT INTO ko_tools (slug, name, description, access, status, sort, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            ->execute(['ko2', 'K.O. II Patterns', 'Browse, play and rearrange the patterns on your EP-133 K.O. II.', 'everyone', 'live', 10, gmdate('Y-m-d H:i:s')]);
-    }
 }
 
 /** Record something a user did, for the admin activity log. */
@@ -135,18 +114,6 @@ function log_event(?int $uid, string $type, string $detail = ''): void {
     } catch (Throwable $e) { error_log('kostudio log_event: ' . $e->getMessage()); }
 }
 
-/** Tools this user may open (live ones; admins also see hidden ones). */
-function tools_for(array $u): array {
-    $rows = db()->query('SELECT * FROM ko_tools ORDER BY sort, name')->fetchAll();
-    $st = db()->prepare('SELECT tool_id FROM ko_tool_access WHERE user_id = ?');
-    $st->execute([$u['id']]);
-    $granted = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
-    return array_values(array_filter($rows, function ($t) use ($u, $granted) {
-        if ($u['is_admin']) return true;
-        if ($t['status'] !== 'live') return false;
-        return $t['access'] === 'everyone' || ($t['access'] === 'selected' && in_array((int)$t['id'], $granted, true));
-    }));
-}
 
 function now(): string { return gmdate('Y-m-d H:i:s'); }
 function ago(int $seconds): string { return gmdate('Y-m-d H:i:s', time() - $seconds); }

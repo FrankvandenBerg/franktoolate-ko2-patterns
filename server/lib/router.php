@@ -43,7 +43,6 @@ $u = current_user();
 if (!$u) redirect('login');
 if (passkey_count((int)$u['id']) === 0) redirect('passkey');
 
-$tools = tools_for($u);
 
 // Project backups: kept per user, device and project; the newest 25 per project are kept.
 if ($route === 'api/backups' || preg_match('~^api/backups/(\d+)$~', $route, $bm)) {
@@ -95,7 +94,7 @@ if ($route === 'api/backups' || preg_match('~^api/backups/(\d+)$~', $route, $bm)
     json_out(['error' => 'Unsupported method.'], 405);
 }
 
-// Small JSON API for the tools (signed-in users only)
+// Small JSON API for the app (signed-in users only)
 if ($route === 'api/sounds') {
     $device = substr(preg_replace('~[^A-Za-z0-9_-]~', '', (string)($_GET['device'] ?? '')), 0, 64);
     if ($device === '') json_out(['error' => 'Missing device.'], 400);
@@ -131,32 +130,17 @@ if ($route === 'api/sounds') {
     json_out(['error' => 'Use GET or POST.'], 405);
 }
 
-if ($route === '') {
-    // Launcher: go straight to the only tool, otherwise list them.
-    $live = array_values(array_filter($tools, fn($t) => $t['status'] === 'live'));
-    if (count($live) === 1 && !$u['is_admin']) redirect($live[0]['slug'] . '/');
-    require KO_HOME . '/lib/pages/home.php';
-    exit;
-}
+// The app itself lives at the root. Old addresses (/ko2/…, /index.html) still work.
+if (preg_match('~^ko2(/(.*))?$~', $route, $km)) { $rest = $km[2] ?? ''; redirect($rest === '' || $rest === 'index.html' ? '' : $rest); }
+if ($route === '' || $route === 'index.html') { serve_app_file($u, 'index.html'); exit; }
+if (preg_match('~^[A-Za-z0-9_-]+\.(js|css|json|svg|png|wasm)$~', $route)) { serve_app_file($u, $route); exit; }
+http_response_code(404);
+page('Not found', '<h1>Not found</h1><p><a href="' . h(url()) . '">Back to the tool</a></p>');
+exit;
 
-// Old address of the K.O. II tool
-if ($route === 'index.html' || $route === 'ko2lib.js') redirect('ko2/');
-
-[$slug, $file] = array_pad(explode('/', $route, 2), 2, '');
-$tool = null;
-foreach ($tools as $t) if ($t['slug'] === $slug) $tool = $t;
-if (!$tool || !preg_match('~^[a-z0-9-]+$~', $slug)) {
-    http_response_code(404);
-    page('Not found', '<h1>Not found</h1><p><a href="' . h(url()) . '">Back to your tools</a></p>');
-    exit;
-}
-// Relative asset paths need the trailing slash.
-if ($file === '' && !str_ends_with($path, '/')) redirect($slug . '/');
-serve_tool($u, $tool, $file === '' ? 'index.html' : $file);
-
-function serve_tool(array $u, array $tool, string $file): void {
+function serve_app_file(array $u, string $file): void {
     if (!preg_match('~^[A-Za-z0-9._-]+$~', $file) || str_starts_with($file, '.')) { http_response_code(404); exit('Not found'); }
-    $full = KO_HOME . '/app/' . $tool['slug'] . '/' . $file;
+    $full = KO_HOME . '/app/ko2/' . $file;
     if (!is_file($full)) { http_response_code(404); exit('Not found'); }
     header('Cache-Control: no-store');
     header('X-Frame-Options: DENY');
@@ -168,22 +152,20 @@ function serve_tool(array $u, array $tool, string $file): void {
         readfile($full);
         return;
     }
-    // Log a tool visit at most once per half hour per tool.
-    $k = 'opened_' . $tool['slug'];
-    if (empty($_SESSION[$k]) || $_SESSION[$k] < time() - 1800) {
-        $_SESSION[$k] = time();
-        log_event((int)$u['id'], 'tool_opened', $tool['slug']);
+    // Log an app visit at most once per half hour.
+    if (empty($_SESSION['opened']) || $_SESSION['opened'] < time() - 1800) {
+        $_SESSION['opened'] = time();
+        log_event((int)$u['id'], 'tool_opened', 'ko2');
     }
-    $bar = '<div class="userbar" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:flex-end;font:12px \'IBM Plex Mono\',monospace;color:var(--muted)">'
-        . '<a href="' . h(url()) . '" style="color:inherit">Tools</a>'
-        . '<span>' . h($u['name'] ?: $u['email']) . '</span>'
-        . ($u['is_admin'] ? '<a href="' . h(url('admin')) . '" style="color:inherit">Admin</a>' : '')
-        . '<a href="' . h(url('account')) . '" style="color:inherit">Account</a>'
-        . '<a href="' . h((string)config('source_url', 'https://github.com/franktoolate/kostudio')) . '" style="color:inherit" target="_blank" rel="noopener">Source code (AGPL-3.0)</a>'
-        . '<form method="post" action="' . h(url('logout')) . '" style="display:inline">' . csrf_field()
-        . '<button style="font:inherit;background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;padding:0">Sign out</button></form></div>';
+    // User menu and (for admins) the Admin tab go into placeholders in the app header.
+    $menu = '<details class="um"><summary>' . h($u['name'] ?: $u['email']) . '</summary><div class="um-pop">'
+        . '<span class="um-mail">' . h($u['email']) . '</span>'
+        . '<a href="' . h(url('account')) . '">Account &amp; passkeys</a>'
+        . '<a href="' . h((string)config('source_url', 'https://github.com/franktoolate/kostudio')) . '" target="_blank" rel="noopener">Source code (AGPL-3.0)</a>'
+        . '<form method="post" action="' . h(url('logout')) . '">' . csrf_field() . '<button>Sign out</button></form></div></details>';
     $html = file_get_contents($full);
-    $html = str_replace('<div class="wrap">', '<div class="wrap">' . $bar, $html);
+    $html = str_replace('<!--user-menu-->', $menu, $html);
+    if ($u['is_admin']) $html = str_replace('<!--admin-tab-->', '<a href="' . h(url('admin')) . '">Admin</a>', $html);
     $html = str_replace('</head>', '<meta name="csrf" content="' . h(csrf_token()) . '"><meta name="ko-base" content="' . h(base_path()) . '"></head>', $html);
     header('Content-Type: text/html; charset=utf-8');
     echo $html;

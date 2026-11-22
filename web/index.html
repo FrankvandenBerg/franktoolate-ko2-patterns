@@ -16,7 +16,7 @@
   --orange:#ff6a33; --a:#ff6a33; --b:#5b8ff0; --c:#3bbf8e; --d:#a87ff0; color-scheme:dark}}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--display);font-size:14px;padding:24px 16px 48px}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--display);font-size:14px;padding:0 16px 48px}
 .wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
 header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:12px}
 h1{font-size:clamp(28px,5vw,44px);font-weight:800;letter-spacing:-.02em;margin:0}
@@ -144,6 +144,44 @@ table.snd tr.cat .cat-meta{font-family:var(--mono);font-size:11px;color:var(--mu
 .md-body .tbl{max-height:60vh;overflow:auto}
 a.play{text-decoration:none;display:inline-block}
 .err{color:#c42}
+.appbar{display:block;margin:0 -16px 18px;position:sticky;top:env(safe-area-inset-top,0px);z-index:40;background:var(--panel);border-bottom:1px solid var(--line);box-shadow:0 1px 0 rgba(0,0,0,.02)}
+.appbar-in{max-width:1080px;margin:0 auto;display:flex;align-items:center;gap:18px;padding:10px 16px;flex-wrap:wrap}
+.brand{font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:-.02em;color:var(--ink);text-decoration:none;white-space:nowrap}
+.brand span{color:var(--orange)}
+.mainnav{display:flex;gap:4px;flex:1;min-width:0}
+.mainnav button,.mainnav a{font:inherit;font-weight:600;font-size:14px;cursor:pointer;background:none;border:0;border-radius:8px;padding:8px 14px;color:var(--muted);text-decoration:none}
+.mainnav button:hover,.mainnav a:hover{background:var(--bg);color:var(--ink)}
+.mainnav [aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.conn{display:flex;align-items:center;gap:8px}
+.conn-pill{display:inline-flex;align-items:center;gap:6px;font:500 12px var(--mono);color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:4px 10px;white-space:nowrap}
+.conn-pill i{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.conn-pill[data-state="on"]{color:var(--ink);border-color:#2a9d6a}
+.conn-pill[data-state="on"] i{background:#2a9d6a;box-shadow:0 0 0 3px color-mix(in srgb,#2a9d6a 25%,transparent)}
+.usermenu{display:flex;align-items:center}
+.usermenu:empty{display:none}
+.um{position:relative}
+.um summary{list-style:none;cursor:pointer;font:500 13px var(--mono);border:1px solid var(--line);border-radius:999px;padding:5px 12px;background:var(--bg)}
+.um summary::-webkit-details-marker{display:none}
+.um summary::after{content:" ▾";color:var(--muted)}
+.um-pop{position:absolute;right:0;top:calc(100% + 6px);background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 14px 40px rgba(0,0,0,.18);padding:8px;display:flex;flex-direction:column;min-width:220px;z-index:45}
+.um-pop a,.um-pop button{font:inherit;font-size:13px;text-align:left;padding:8px 10px;border-radius:6px;color:var(--ink);text-decoration:none;background:none;border:0;cursor:pointer;width:100%}
+.um-pop a:hover,.um-pop button:hover{background:var(--bg)}
+.um-pop form{margin:0}
+.um-mail{font:11px var(--mono);color:var(--muted);padding:6px 10px}
+.linkbtn{font-size:12px;color:var(--muted);text-decoration:underline;cursor:pointer;margin-left:auto}
+@media (max-width:720px){.appbar-in{gap:10px}.mainnav{order:3;flex-basis:100%}.conn{margin-left:auto}}
+.subtabs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.subtabs button{font:inherit;cursor:pointer;text-align:left;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;gap:2px}
+.subtabs button b{font-size:16px;font-weight:800}
+.subtabs button small{font-size:12px;color:var(--muted)}
+.subtabs button[aria-selected="true"]{border-color:var(--orange);box-shadow:inset 0 0 0 1px var(--orange);background:var(--panel)}
+.songview{display:flex;flex-direction:column;gap:12px}
+.timeline{position:relative;height:56px;border:1px solid var(--line);border-radius:10px;background:var(--bg);overflow:hidden}
+.tl-pos{position:absolute;top:6px;bottom:6px;margin:0 2px;border-radius:7px;border:1px solid hsl(var(--h) 55% 45%);background:hsl(var(--h) 60% 55% / .28);color:var(--ink);font:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:0 8px;overflow:hidden;min-width:0}
+.tl-pos b{font-family:var(--mono);font-size:14px}
+.tl-pos small{font-family:var(--mono);font-size:10px;color:var(--muted)}
+.tl-pos.now{background:hsl(var(--h) 60% 55% / .7);box-shadow:0 0 0 2px var(--ink)}
+.tl-axis{display:flex;justify-content:space-between;font:11px var(--mono);color:var(--muted)}
 .focus{outline:2px solid var(--orange)!important;outline-offset:2px}
 .chan[data-chan]{cursor:pointer}
 .hint{font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:6px;padding:8px 10px}
@@ -191,22 +229,30 @@ details.lib[open]{display:flex;flex-direction:column;gap:12px}
 </style>
 </head>
 <body>
+<header class="appbar">
+  <div class="appbar-in">
+    <a class="brand" href="./">K.O. II <span>patterns</span></a>
+    <nav class="mainnav" id="viewTabs" aria-label="Main">
+      <button data-view="projects" aria-pressed="true">Projects</button>
+      <button data-view="sounds">Sounds</button>
+      <!--admin-tab-->
+    </nav>
+    <div class="conn">
+      <span class="conn-pill" id="meta" data-state="off"><i></i><span>not connected</span></span>
+      <button class="btn small" id="connect">Connect K.O. II</button>
+    </div>
+    <div class="usermenu" id="userSlot"><!--user-menu--></div>
+  </div>
+</header>
 <div class="wrap">
-  <header>
-    <h1>K.O. II <span>patterns</span></h1>
-    <div class="meta" id="meta">not connected</div>
-  </header>
-
   <div class="bar">
-    <button class="btn" id="connect">Connect K.O. II</button>
-    <label class="btn sec" for="tarfiles">Open backup (.tar)</label>
-    <input type="file" id="tarfiles" accept=".tar" multiple hidden>
     <span class="status" id="status">Connect the K.O. II over USB and click Connect. Chrome will ask for MIDI permission.</span>
+    <label class="linkbtn" for="tarfiles" title="Open project backups without a device">Open backup (.tar)</label>
+    <input type="file" id="tarfiles" accept=".tar" multiple hidden>
     <div class="prog" id="prog" hidden><i></i></div>
   </div>
 
   <p class="intro" id="intro">Reading is read-only: the projects are requested over MIDI and nothing on the sampler changes until you choose to write.</p>
-  <nav class="viewtabs" id="viewTabs" hidden><button data-view="projects">Projects</button><button data-view="sounds">Sounds</button></nav>
   <nav class="projects" id="projects" aria-label="Projects" hidden></nav>
   <section class="card" id="project" hidden></section>
   <p class="foot">Patterns are numbered 01–99 per group (A–D), as in the Teenage Engineering guide. "b" is the pattern length in bars (1 bar = 384 ticks at 96 ppqn), "n" the number of notes. Pads are named by the labels printed on them (7 8 9 / 4 5 6 / 1 2 3 / . 0 ENTER). Left/right arrows switch scene (also while a scene plays), keys 1–9 switch project, space plays or stops the selected scene. Moving: drag a pattern onto another pattern to swap them, or onto a group to move it there; within a group, scenes follow along. Deleting a pattern leaves its group silent in scenes that used it; clearing a scene also removes it from the song. Playback sends MIDI notes on channel 1 (group A = notes 36–47, B = 48–59, C = 60–71, D = 72–83, in the order . 0 ENTER 1–9); do not leave the K.O. II in record mode, or the notes will be recorded. Pads in keys mode play at their root note.</p>
@@ -221,6 +267,7 @@ const $ = s => document.querySelector(s);
 const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null, selScene = null, focusSel = null, libOpen = false, editGroup = null, noteSel = -1;
 const openRolls = new Set(); let rollsTouched = false;
 // Following the K.O. II's own playback via its MIDI clock (24 per quarter note) and start/stop.
+let projView = 'scenes';
 let pitchMode = true;   // confirmed on the device: a pad with its own MIDI channel plays the note it receives
 let view = 'projects', sounds = [], soundsQuery = '', soundsFilter = 'all', deviceSerial = null, sndDirNode = 1000, playingSound = null;
 const follow = { running: false, clocks: 0, raf: 0, lastNote: 0, heard: [], followScenes: true, guess: null }; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
@@ -247,7 +294,9 @@ $('#connect').addEventListener('click', async () => {
     dev.onFileEvent = onDeviceFileEvent;
     player.onTick = updatePlayheads;
     const info = await dev.greet();
-    $('#meta').innerHTML = `${info.product||'EP-133'} · OS ${info.os_version||'?'}<br>serial ${info.serial||'?'}`;
+    const pill = $('#meta'); pill.dataset.state = 'on'; pill.title = `serial ${info.serial || '?'}`;
+    pill.querySelector('span').textContent = `${info.product || 'EP-133'} · OS ${info.os_version || '?'}`;
+    $('#connect').textContent = 'Reconnect';
     await dev.fsInit();
     status('Looking up projects…');
     const root = await dev.ls(0);
@@ -291,7 +340,7 @@ $('#tarfiles').addEventListener('change', async ev => {
 
 function render(){
   if (!DATA.length) return;
-  const vt = $('#viewTabs'); if (vt) { vt.hidden = false; vt.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view)); }
+  const vt = $('#viewTabs'); if (vt) vt.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view));
   if (view === 'sounds') { $('#intro').hidden = true; $('#projects').hidden = true; drawPending(null); renderSounds(); return; }
   if (cur >= DATA.length) cur = 0;
   $('#intro').hidden = true;
@@ -311,8 +360,14 @@ function render(){
     ${KO_BASE !== null ? '<button class="play" id="openBackups" title="Backups stored on the server">backups</button>' : ''}
     ${dev && p.node && channelPlan(p).assign.length ? `<button class="play" id="assignCh" title="Melody pads need their own MIDI channel for the tool to play their pitches">give ${channelPlan(p).assign.length} melody pad${channelPlan(p).assign.length === 1 ? '' : 's'} a MIDI channel…</button>` : ''}</div>`;
   drawPending(p);
-  h += songHtml(p);
-  if (!p.scenes.length) {
+  // Two clearly separate parts of a project: the scenes (what plays together) and the song (the order of scenes).
+  h += `<div class="subtabs" role="tablist">
+    <button role="tab" data-pview="scenes" aria-selected="${projView === 'scenes'}"><b>Scenes</b><small>${p.scenes.length} scene${p.scenes.length === 1 ? '' : 's'} · what plays together</small></button>
+    <button role="tab" data-pview="song" aria-selected="${projView === 'song'}"><b>Song</b><small>${p.song.length ? p.song.length + ' position' + (p.song.length === 1 ? '' : 's') : 'no song'} · the order of scenes</small></button>
+  </div>`;
+  if (projView === 'song') {
+    h += `<section class="songview">${songTimeline(p)}${songHtml(p)}</section>`;
+  } else if (!p.scenes.length) {
     h += `<h3>Scenes</h3><p class="none">This project has no scenes yet.</p>`;
   } else {
     const fdesc = !focusSel ? '' : focusSel.kind === 'scene' ? `scene ${pad2(focusSel.n)}` : (() => { const x = p.pats.find(q => q.g + q.n === focusSel.k); return x ? `pattern ${label(x)}` : ''; })();
@@ -324,6 +379,7 @@ function render(){
     }).join('') + `</div>`;
     h += sceneHtml(p, selScene);
   }
+  if (projView === 'scenes') {
   const unused = p.pats.filter(q => !p.scenes.some(sc => sc['ABCD'.indexOf(q.g) + 1] === q.n));
   h += `<details class="lib"${libOpen ? ' open' : ''}><summary>All patterns (${p.pats.length})${unused.length ? ` · ${unused.length} not in any scene` : ''}</summary><div class="groups">`;
   for (const g of ['A','B','C','D']) {
@@ -345,6 +401,7 @@ function render(){
       <span class="stat">or drag a pattern onto another pattern or a group</span></div>`;
   }
   h += `</details>`;
+  }
   card.innerHTML = h;
   drawRolls();
 }
@@ -455,6 +512,20 @@ function sceneParts(p, sceneNo){
   const sc = p.scenes.find(s => s[0] === sceneNo);
   if (!sc) return [];
   return ['A','B','C','D'].map((g, i) => p.pats.find(q => q.g === g && q.n === sc[i + 1])).filter(Boolean);
+}
+// The song as a timeline: one block per position, as wide as it lasts; click a block to open that scene.
+function songTimeline(p){
+  if (!p.song.length) return '';
+  const bars = p.song.map(n => Math.max(1, ...sceneParts(p, n).map(q => q.bars || 1)));
+  const total = bars.reduce((a, b) => a + b, 0);
+  const hue = n => (n * 47) % 360;
+  let h = `<div class="timeline">`, at = 0;
+  p.song.forEach((n, i) => {
+    h += `<button class="tl-pos" data-goto-scene="${n}" style="left:${at / total * 100}%;width:calc(${bars[i] / total * 100}% - 4px);--h:${hue(n)}" title="Position ${i + 1}: scene ${String(n).padStart(2, '0')}, ${bars[i]} bar${bars[i] === 1 ? '' : 's'} · click to open the scene"><b>${String(n).padStart(2, '0')}</b><small>${i + 1}</small></button>`;
+    at += bars[i];
+  });
+  h += `</div><div class="tl-axis"><span>bar 1</span><span>${total} bars · ${p.bpm ? Math.round(total * 4 * 60 / p.bpm) + ' s at ' + p.bpm + ' BPM' : ''}</span></div>`;
+  return h;
 }
 function songHtml(p){
   const editable = !!p.songEditable;
@@ -1063,6 +1134,7 @@ function drawFollow(){
 }
 function updatePlayheads(f, seg){
   document.querySelectorAll('.pos').forEach((el, i) => el.classList.toggle('now', f != null && playing && playing.kind === 'song' && i === seg));
+  document.querySelectorAll('.tl-pos').forEach((el, i) => el.classList.toggle('now', f != null && playing && playing.kind === 'song' && i === seg));
   const segStart = (player && player.segmentStarts && player.segmentStarts[seg]) || 0;
   const t = f == null ? null : f * player.loopTicks - segStart;
   document.querySelectorAll('.rollgrid').forEach(g => {
@@ -1097,7 +1169,7 @@ document.addEventListener('click', ev => {
   if (ev.target.closest('#doAssignCh')) { assignChannels(); return; }
   if (ev.target.closest('[data-modal-close]') || ev.target.id === 'modal') { closeModal(); return; }
   const rb = ev.target.closest('[data-restore]'); if (rb) { restoreBackup(+rb.dataset.restore, rb.dataset.when); return; }
-  const vb = ev.target.closest('[data-view]'); if (vb) { stopPlay(); view = vb.dataset.view; render(); return; }
+  const vb = ev.target.closest('[data-view]'); if (vb) { stopPlay(); view = vb.dataset.view; $('#viewTabs').querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view)); if (DATA.length) render(); else if (view === 'sounds') renderSounds(); else { $('#project').hidden = true; } return; }
   const sb2 = ev.target.closest('[data-snd]'); if (sb2) { toggleSound(+sb2.dataset.snd); return; }
   if (ev.target.closest('#openOnDevice')) { openOnDevice(); return; }
   const et = ev.target.closest('[data-edit]');
@@ -1138,6 +1210,8 @@ document.addEventListener('click', ev => {
     else playScene(+pl.dataset.scene, true);
     return;
   }
+  const pv = ev.target.closest('[data-pview]'); if (pv) { projView = pv.dataset.pview; render(); return; }
+  const gs = ev.target.closest('[data-goto-scene]'); if (gs) { projView = 'scenes'; selScene = +gs.dataset.gotoScene; sel = null; render(); return; }
   const ps = ev.target.closest('[data-pick-scene]');
   if (ps) { focusSel = { kind: 'scene', n: +ps.dataset.pickScene }; pickScene(+ps.dataset.pickScene); return; }
   const pb = ev.target.closest('.pbtn'); if (pb) { stopPlay(); cur = +pb.dataset.i; sel = null; selScene = null; focusSel = null; render(); return; }
