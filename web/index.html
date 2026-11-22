@@ -90,6 +90,11 @@ td.dim{color:var(--muted)}
 .pos{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:5px;padding:5px 8px;background:var(--bg);display:flex;gap:6px;align-items:baseline}
 .pos .k{color:var(--muted);font-size:10px}
 .pos.now{border-color:var(--orange);box-shadow:inset 0 0 0 1px var(--orange)}
+.focus{outline:2px solid var(--orange)!important;outline-offset:2px}
+.chan[data-chan]{cursor:pointer}
+.hint{font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:6px;padding:8px 10px}
+.hint b{color:var(--ink)}
+kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--bg);color:var(--ink)}
 .scenes{display:flex;flex-wrap:wrap;gap:6px}
 .scn{font:inherit;cursor:pointer;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 10px;display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-width:64px}
 .scn b{font-family:var(--mono);font-size:15px;font-weight:500}
@@ -158,7 +163,7 @@ const { KO2, Player, untar, parseProject, movePattern, setSong, deletePatterns, 
 const GC = { A:'var(--a)', B:'var(--b)', C:'var(--c)', D:'var(--d)' };
 const TPB = 384;
 const $ = s => document.querySelector(s);
-const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null, selScene = null;
+const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null, selScene = null, focusSel = null, libOpen = false; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
 let projDirNode = 2000, DATA = [], soundNames = {}, cur = 0, sel = null, dev = null, player = null, playing = null; // playing: {kind:'pat'|'scene', key}
 
 function status(t, err){ const s=$('#status'); s.textContent=t; s.classList.toggle('err', !!err); }
@@ -251,19 +256,21 @@ function render(){
   if (!p.scenes.length) {
     h += `<h3>Scenes</h3><p class="none">This project has no scenes yet.</p>`;
   } else {
+    const fdesc = !focusSel ? '' : focusSel.kind === 'scene' ? `scene ${pad2(focusSel.n)}` : (() => { const x = p.pats.find(q => q.g + q.n === focusSel.k); return x ? `pattern ${label(x)}` : ''; })();
+    h += `<div class="hint" role="status">${fdesc ? `Selected: <b>${fdesc}</b>. Press <kbd>Delete</kbd> to remove it${focusSel.kind === 'scene' ? ' (<kbd>Shift</kbd>+<kbd>Delete</kbd> also deletes the patterns only this scene uses)' : ''}, <kbd>Esc</kbd> to deselect.` : 'Click a scene or a pattern to select it, then press <kbd>Delete</kbd> to remove it.'}</div>`;
     h += `<h3>Scenes</h3><div class="scenes">` + p.scenes.map(sc => {
       const n = sc[0], parts = sceneParts(p, n), bars = Math.max(1, ...parts.map(q => q.bars || 1)), notes = parts.reduce((a, q) => a + q.notes, 0);
       const inSong = p.song.includes(n);
-      return `<button class="scn" data-pick-scene="${n}" aria-pressed="${n === selScene}"><b>${pad2(n)}</b><small>${bars}b · ${notes}n${inSong ? ' · song' : ''}</small></button>`;
+      return `<button class="scn${focusSel && focusSel.kind === 'scene' && focusSel.n === n ? ' focus' : ''}" data-pick-scene="${n}" aria-pressed="${n === selScene}"><b>${pad2(n)}</b><small>${bars}b · ${notes}n${inSong ? ' · song' : ''}</small></button>`;
     }).join('') + `</div>`;
     h += sceneHtml(p, selScene);
   }
   const unused = p.pats.filter(q => !p.scenes.some(sc => sc['ABCD'.indexOf(q.g) + 1] === q.n));
-  h += `<details class="lib"><summary>All patterns (${p.pats.length})${unused.length ? ` · ${unused.length} not in any scene` : ''}</summary><div class="groups">`;
+  h += `<details class="lib"${libOpen ? ' open' : ''}><summary>All patterns (${p.pats.length})${unused.length ? ` · ${unused.length} not in any scene` : ''}</summary><div class="groups">`;
   for (const g of ['A','B','C','D']) {
     const list = p.pats.filter(x => x.g === g);
     h += `<div class="grow" data-g="${g}"><div class="gl" style="background:${GC[g]}">${g}</div><div class="pats" style="--gc:${GC[g]}">`;
-    h += list.length ? list.map(x => `<button class="pat ${x.notes?'':'empty'}${unused.includes(x) ? ' unused' : ''}" draggable="true" aria-pressed="${sel===g+x.n}" data-k="${g+x.n}" title="${unused.includes(x) ? 'Not used in any scene' : ''}"><span class="n">${pad2(x.n)}</span><span class="i">${x.bars}b · ${x.notes}n</span></button>`).join('')
+    h += list.length ? list.map(x => `<button class="pat ${x.notes?'':'empty'}${unused.includes(x) ? ' unused' : ''}${focusSel && focusSel.kind === 'pattern' && focusSel.k === g + x.n ? ' focus' : ''}" draggable="true" aria-pressed="${sel===g+x.n}" data-k="${g+x.n}" title="${unused.includes(x) ? 'Not used in any scene' : ''}"><span class="n">${pad2(x.n)}</span><span class="i">${x.bars}b · ${x.notes}n</span></button>`).join('')
                        : `<span class="none" style="padding-top:8px">no patterns</span>`;
     h += `</div></div>`;
   }
@@ -303,7 +310,8 @@ function sceneHtml(p, n){
       + (pn && !pat ? `<option value="${pn}" selected>pattern ${pad2(pn)} (empty)</option>` : '');
     const info = pat && pat.notes ? `${pat.bars} bar${pat.bars === 1 ? '' : 's'} · ${pat.notes} notes` : 'silent';
     const selected = pat && sel === g + pn;
-    h += `<div class="chan${groupAudible(g) ? '' : ' off'}${selected ? ' sel' : ''}" style="--gc:${GC[g]}">
+    const foc = pat && focusSel && focusSel.kind === 'pattern' && focusSel.k === g + pn;
+    h += `<div class="chan${groupAudible(g) ? '' : ' off'}${selected ? ' sel' : ''}${foc ? ' focus' : ''}"${pat ? ` data-chan="${g + pn}"` : ''} style="--gc:${GC[g]}">
       <div class="gl" style="background:${GC[g]}">${g}</div>
       <select data-scene-pat="${g}" aria-label="Pattern for group ${g} in scene ${pad2(n)}">${opts}</select>
       <span class="pt">${info}</span>
@@ -459,6 +467,35 @@ async function writeProject(){
   } catch (e) { progress(null); status(e.message || String(e), true); }
   finally { btns.forEach(b => b.disabled = false); }
 }
+function stageDelete(f, withPatterns){
+  const p = DATA[cur];
+  if (!f) return;
+  stopPlay();
+  try {
+    let tar, msg;
+    if (f.kind === 'pattern') {
+      const x = p.pats.find(q => q.g + q.n === f.k);
+      if (!x) return;
+      tar = deletePatterns(p.tar, [x]);
+      const inScenes = p.scenes.filter(sc => sc['ABCD'.indexOf(x.g) + 1] === x.n).map(sc => sc[0]);
+      msg = `Deleted pattern ${label(x)}` + (inScenes.length ? ` (group ${x.g} is now silent in scene ${inScenes.join(', ')})` : '');
+      if (sel === f.k) sel = null;
+    } else {
+      const from = f.n, to = f.to || f.n, nos = [];
+      for (let n = from; n <= to; n++) nos.push(n);
+      const r = deleteScenes(p.tar, nos, !!withPatterns);
+      tar = r.tar;
+      const inSong = p.song.filter(n => nos.includes(n)).length;
+      msg = `Cleared scene ${from === to ? String(from).padStart(2, '0') : String(from).padStart(2, '0') + '–' + String(to).padStart(2, '0')}`
+        + (r.deletedPatterns.length ? `, deleted patterns ${r.deletedPatterns.map(label).join(', ')}` : '')
+        + (inSong ? `, removed ${inSong} song position${inSong === 1 ? '' : 's'}` : '');
+    }
+    DATA[cur] = { ...parseProject(p.p, untar(tar)), tar, orig: p.orig, node: p.node, changes: [...p.changes, msg] };
+    focusSel = null;
+    status(msg + '. Not written yet — use Undo changes to take it back.');
+    render();
+  } catch (e) { status(e.message || String(e), true); }
+}
 function playScene(n, toggle){
   if (!player) return;
   const key = cur + ':' + n;
@@ -500,32 +537,12 @@ document.addEventListener('click', ev => {
   if (so) { const g = so.dataset.solo; soloGroup = soloGroup === g ? null : g; applyMixer(); return; }
   const db = ev.target.closest('[data-del]');
   if (db) {
-    const p = DATA[cur];
-    stopPlay();
-    try {
-      let tar, msg;
-      if (db.dataset.del === 'pattern') {
-        const x = p.pats.find(q => q.g + q.n === db.dataset.k);
-        tar = deletePatterns(p.tar, [x]);
-        const inScenes = p.scenes.filter(sc => sc['ABCD'.indexOf(x.g) + 1] === x.n).map(sc => sc[0]);
-        msg = `Deleted pattern ${label(x)}` + (inScenes.length ? ` (group ${x.g} is now silent in scene ${inScenes.join(', ')})` : '');
-        sel = null;
-      } else {
-        const from = +db.dataset.from, to = +db.dataset.to, nos = [];
-        for (let n = from; n <= to; n++) nos.push(n);
-        const r = deleteScenes(p.tar, nos, db.dataset.del === 'scene-patterns');
-        tar = r.tar;
-        const inSong = p.song.filter(n => nos.includes(n)).length;
-        msg = `Cleared scene ${from === to ? String(from).padStart(2, '0') : String(from).padStart(2, '0') + '–' + String(to).padStart(2, '0')}`
-          + (r.deletedPatterns.length ? `, deleted patterns ${r.deletedPatterns.map(label).join(', ')}` : '')
-          + (inSong ? `, removed ${inSong} song position${inSong === 1 ? '' : 's'}` : '');
-      }
-      DATA[cur] = { ...parseProject(p.p, untar(tar)), tar, orig: p.orig, node: p.node, changes: [...p.changes, msg] };
-      status(msg + '. Not written yet.');
-      render();
-    } catch (e) { status(e.message || String(e), true); }
+    if (db.dataset.del === 'pattern') stageDelete({ kind: 'pattern', k: db.dataset.k });
+    else stageDelete({ kind: 'scene', n: +db.dataset.from, to: +db.dataset.to }, db.dataset.del === 'scene-patterns');
     return;
   }
+  const ch = ev.target.closest('[data-chan]');
+  if (ch && !ev.target.closest('select,button')) { focusSel = { kind: 'pattern', k: ch.dataset.chan }; sel = ch.dataset.chan; render(); return; }
   const sb = ev.target.closest('[data-song]');
   if (sb && !sb.disabled) {
     const p = DATA[cur], song = [...p.song], i = +sb.dataset.i, act = sb.dataset.song;
@@ -546,12 +563,13 @@ document.addEventListener('click', ev => {
     return;
   }
   const ps = ev.target.closest('[data-pick-scene]');
-  if (ps) { pickScene(+ps.dataset.pickScene); return; }
+  if (ps) { focusSel = { kind: 'scene', n: +ps.dataset.pickScene }; pickScene(+ps.dataset.pickScene); return; }
   const sh = ev.target.closest('[data-show]');
   if (sh) { sel = sh.dataset.show; render(); return; }
-  const pb = ev.target.closest('.pbtn'); if (pb) { stopPlay(); cur = +pb.dataset.i; sel = null; selScene = null; render(); return; }
-  const pt = ev.target.closest('.pat'); if (pt) { sel = pt.dataset.k; if (playing && playing.kind === 'pat') { stopPlay(); playSelected(); } else drawRoll(); }
+  const pb = ev.target.closest('.pbtn'); if (pb) { stopPlay(); cur = +pb.dataset.i; sel = null; selScene = null; focusSel = null; render(); return; }
+  const pt = ev.target.closest('.pat'); if (pt) { sel = pt.dataset.k; focusSel = { kind: 'pattern', k: pt.dataset.k }; render(); if (playing && playing.kind === 'pat') { stopPlay(); playSelected(); } else drawRoll(); }
 });
+document.addEventListener('toggle', ev => { if (ev.target.matches && ev.target.matches('details.lib')) libOpen = ev.target.open; }, true);
 document.addEventListener('change', ev => {
   const sp = ev.target.closest('[data-scene-pat]');
   if (sp) {
@@ -606,6 +624,8 @@ document.addEventListener('drop', ev => {
 });
 document.addEventListener('keydown', ev => {
   if (!DATA.length || ev.target.closest('input,select')) return;
+  if ((ev.key === 'Delete' || ev.key === 'Backspace') && focusSel) { ev.preventDefault(); stageDelete(focusSel, ev.shiftKey); return; }
+  if (ev.key === 'Escape' && focusSel) { focusSel = null; render(); return; }
   if (/^[abcd]$/i.test(ev.key) && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
     const g = ev.key.toUpperCase();
     if (soloKey) soloGroup = soloGroup === g ? null : g; else mixer[g] = !mixer[g];
