@@ -304,6 +304,18 @@
     return { tar: buildTar(entries.filter(e => !keys.has(e.name))), deletedPatterns: doomed };
   }
 
+  // Point a scene's group (A–D) at another pattern number (0 = no pattern).
+  function setScenePattern(tarBuf, sceneNo, group, n) {
+    const entries = tarEntries(tarBuf);
+    const sc = entries.find(e => e.name === 'scenes');
+    if (!sc) throw new Error('This project has no scenes file.');
+    if (sceneNo < 1 || sceneNo > 99 || n < 0 || n > 99) throw new Error('Scene and pattern numbers run from 1 to 99.');
+    const d = new Uint8Array(sc.data);
+    d[7 + (sceneNo - 1) * 6 + 'ABCD'.indexOf(group)] = n;
+    sc.data = d;
+    return buildTar(entries);
+  }
+
   // Replace the song list (scene number per position, 1–99 positions) in a project archive.
   function setSong(tarBuf, positions) {
     const entries = tarEntries(tarBuf);
@@ -443,6 +455,6 @@
     }
   }
 
-  const api = { KO2, Player, untar, parseProject, pack7, unpack7, tarEntries, buildTar, movePattern, setSong, deletePatterns, deleteScenes };
+  const api = { KO2, Player, untar, parseProject, pack7, unpack7, tarEntries, buildTar, movePattern, setSong, deletePatterns, deleteScenes, setScenePattern };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KO2Lib = api;
 })(typeof window !== 'undefined' ? window : globalThis);

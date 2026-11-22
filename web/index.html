@@ -90,6 +90,28 @@ td.dim{color:var(--muted)}
 .pos{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:5px;padding:5px 8px;background:var(--bg);display:flex;gap:6px;align-items:baseline}
 .pos .k{color:var(--muted);font-size:10px}
 .pos.now{border-color:var(--orange);box-shadow:inset 0 0 0 1px var(--orange)}
+.scenes{display:flex;flex-wrap:wrap;gap:6px}
+.scn{font:inherit;cursor:pointer;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 10px;display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-width:64px}
+.scn b{font-family:var(--mono);font-size:15px;font-weight:500}
+.scn small{font-family:var(--mono);font-size:10px;color:var(--muted)}
+.scn[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.scn[aria-pressed="true"] small{color:var(--bg);opacity:.7}
+.scn:focus-visible,.chan button:focus-visible,.chan select:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+section.scene{border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:12px;background:var(--bg)}
+.chans{display:flex;flex-direction:column;gap:6px}
+.chan{display:grid;grid-template-columns:34px minmax(120px,170px) 1fr auto;gap:10px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--panel)}
+.chan.sel{border-color:var(--gc);box-shadow:inset 0 0 0 1px var(--gc)}
+.chan.off{opacity:.45}
+.chan select{font:inherit;font-family:var(--mono);font-size:12px;padding:5px 6px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);min-width:0}
+.chan .pt{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.chan .btns{display:flex;gap:6px}
+.chan button{font:inherit;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid var(--line);border-radius:5px;padding:5px 9px;background:var(--bg);color:var(--ink)}
+.chan button.on{background:var(--gc);border-color:var(--gc);color:#fff}
+.chan button.solo[aria-pressed="true"],.chan button[data-show][aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+@media (max-width:640px){.chan{grid-template-columns:34px 1fr}.chan .pt{grid-column:2}.chan .btns{grid-column:1 / -1}}
+details.lib summary{cursor:pointer;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:4px 0}
+details.lib[open]{display:flex;flex-direction:column;gap:12px}
+.pat.unused{border-style:dashed}
 .mixer{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .ch{border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;align-items:stretch;background:var(--bg)}
 .ch .top{display:flex;align-items:center;justify-content:space-between;gap:6px}
@@ -127,16 +149,16 @@ td.dim{color:var(--muted)}
   <p class="intro" id="intro">Reading is read-only: the projects are requested over MIDI and nothing on the sampler changes until you choose to write.</p>
   <nav class="projects" id="projects" aria-label="Projects" hidden></nav>
   <section class="card" id="project" hidden></section>
-  <p class="foot">Patterns are numbered 01–99 per group (A–D), as in the Teenage Engineering guide. "b" is the pattern length in bars (1 bar = 384 ticks at 96 ppqn), "n" the number of notes. Pad numbers 1–12 are the internal order, not the labels printed on the pads. Left/right arrows switch pattern, keys 1–9 switch project, space plays or stops. Moving: drag a pattern onto another pattern to swap them, or onto a group to move it there; within a group, scenes follow along. Deleting a pattern leaves its group silent in scenes that used it; clearing a scene also removes it from the song. Playback sends MIDI notes to the sampler (group A = notes 36–47, B = 48–59, C = 60–71, D = 72–83); do not leave the K.O. II in record mode, or the notes will be recorded. Pads in keys mode play at their root note.</p>
+  <p class="foot">Patterns are numbered 01–99 per group (A–D), as in the Teenage Engineering guide. "b" is the pattern length in bars (1 bar = 384 ticks at 96 ppqn), "n" the number of notes. Pad numbers 1–12 are the internal order, not the labels printed on the pads. Left/right arrows switch scene (also while a scene plays), keys 1–9 switch project, space plays or stops the selected scene. Moving: drag a pattern onto another pattern to swap them, or onto a group to move it there; within a group, scenes follow along. Deleting a pattern leaves its group silent in scenes that used it; clearing a scene also removes it from the song. Playback sends MIDI notes to the sampler (group A = notes 36–47, B = 48–59, C = 60–71, D = 72–83); do not leave the K.O. II in record mode, or the notes will be recorded. Pads in keys mode play at their root note.</p>
 </div>
 
 <script src="ko2lib.js"></script>
 <script>
-const { KO2, Player, untar, parseProject, movePattern, setSong, deletePatterns, deleteScenes } = window.KO2Lib;
+const { KO2, Player, untar, parseProject, movePattern, setSong, deletePatterns, deleteScenes, setScenePattern } = window.KO2Lib;
 const GC = { A:'var(--a)', B:'var(--b)', C:'var(--c)', D:'var(--d)' };
 const TPB = 384;
 const $ = s => document.querySelector(s);
-const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null;
+const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null, selScene = null;
 let projDirNode = 2000, DATA = [], soundNames = {}, cur = 0, sel = null, dev = null, player = null, playing = null; // playing: {kind:'pat'|'scene', key}
 
 function status(t, err){ const s=$('#status'); s.textContent=t; s.classList.toggle('err', !!err); }
@@ -205,84 +227,99 @@ function render(){
   $('#intro').hidden = true;
   const nav = $('#projects'); nav.hidden = false;
   nav.innerHTML = DATA.map((p, i) => {
-    const n = p.pats.filter(x => x.notes).length;
-    return `<button class="pbtn" aria-pressed="${i===cur}" data-i="${i}"><b>${p.p}</b><small>${p.changes && p.changes.length ? '● edited' : (n ? n+' pat' : 'empty')}</small></button>`;
+    const n = p.scenes.length;
+    return `<button class="pbtn" aria-pressed="${i===cur}" data-i="${i}"><b>${p.p}</b><small>${p.changes && p.changes.length ? '● edited' : (n ? n + ' scene' + (n === 1 ? '' : 's') : 'empty')}</small></button>`;
   }).join('');
   const p = DATA[cur], card = $('#project'); card.hidden = false;
-  const withNotes = p.pats.filter(x => x.notes);
+  const pad2 = n => String(n).padStart(2, '0');
+  if (!p.scenes.some(sc => sc[0] === selScene)) selScene = (p.scenes.find(sc => sc[0] === p.activeScene) || p.scenes[0] || [null])[0];
   let h = `<div class="ph"><h2>Project ${p.p}</h2>
     <span class="stat"><b>${p.bpm ?? '–'}</b> BPM</span>
-    <span class="stat"><b>${withNotes.length}</b> patterns with notes</span>
-    <span class="stat"><b>${withNotes.reduce((n,x)=>n+x.notes,0)}</b> notes</span></div>`;
-  if (!p.pats.length) h += `<p class="none">This project is empty: no patterns recorded.</p>`;
-  else {
-    h += `<h3>Patterns by group</h3><div class="groups">`;
-    for (const g of ['A','B','C','D']) {
-      const list = p.pats.filter(x => x.g === g);
-      h += `<div class="grow" data-g="${g}"><div class="gl" style="background:${GC[g]}">${g}</div><div class="pats" style="--gc:${GC[g]}">`;
-      h += list.length ? list.map(x => `<button class="pat ${x.notes?'':'empty'}" draggable="true" aria-pressed="${sel===g+x.n}" data-k="${g+x.n}"><span class="n">${String(x.n).padStart(2,'0')}</span><span class="i">${x.bars}b · ${x.notes}n</span></button>`).join('')
-                         : `<span class="none" style="padding-top:8px">no patterns</span>`;
-      h += `</div></div>`;
-    }
-    h += `</div>`;
-    const cursel = p.pats.find(q => q.g + q.n === sel) || p.pats.find(q => q.notes) || p.pats[0];
+    <span class="stat"><b>${p.scenes.length}</b> scene${p.scenes.length === 1 ? '' : 's'}</span>
+    <span class="stat"><b>${p.pats.filter(x => x.notes).length}</b> patterns with notes</span></div>`;
+  if (p.changes.length) {
+    h += `<div class="pending"><strong>${p.changes.length} change${p.changes.length===1?'':'s'}, not yet on the K.O. II</strong>
+      <ul>${p.changes.map(c => `<li>${c}</li>`).join('')}</ul>
+      <div class="row">
+        <button class="btn small" id="writeProj" ${dev && p.node ? '' : 'disabled'}>Write to K.O. II</button>
+        <button class="btn small sec" id="dlProj">Download .tar</button>
+        <button class="btn small sec" id="undoProj">Undo changes</button>
+      </div>
+      <span class="stat">Before writing, the tool backs up this project from the K.O. II and downloads it. After writing, it reads the project back to verify.</span></div>`;
+  }
+  h += songHtml(p);
+  if (!p.scenes.length) {
+    h += `<h3>Scenes</h3><p class="none">This project has no scenes yet.</p>`;
+  } else {
+    h += `<h3>Scenes</h3><div class="scenes">` + p.scenes.map(sc => {
+      const n = sc[0], parts = sceneParts(p, n), bars = Math.max(1, ...parts.map(q => q.bars || 1)), notes = parts.reduce((a, q) => a + q.notes, 0);
+      const inSong = p.song.includes(n);
+      return `<button class="scn" data-pick-scene="${n}" aria-pressed="${n === selScene}"><b>${pad2(n)}</b><small>${bars}b · ${notes}n${inSong ? ' · song' : ''}</small></button>`;
+    }).join('') + `</div>`;
+    h += sceneHtml(p, selScene);
+  }
+  const unused = p.pats.filter(q => !p.scenes.some(sc => sc['ABCD'.indexOf(q.g) + 1] === q.n));
+  h += `<details class="lib"><summary>All patterns (${p.pats.length})${unused.length ? ` · ${unused.length} not in any scene` : ''}</summary><div class="groups">`;
+  for (const g of ['A','B','C','D']) {
+    const list = p.pats.filter(x => x.g === g);
+    h += `<div class="grow" data-g="${g}"><div class="gl" style="background:${GC[g]}">${g}</div><div class="pats" style="--gc:${GC[g]}">`;
+    h += list.length ? list.map(x => `<button class="pat ${x.notes?'':'empty'}${unused.includes(x) ? ' unused' : ''}" draggable="true" aria-pressed="${sel===g+x.n}" data-k="${g+x.n}" title="${unused.includes(x) ? 'Not used in any scene' : ''}"><span class="n">${pad2(x.n)}</span><span class="i">${x.bars}b · ${x.notes}n</span></button>`).join('')
+                       : `<span class="none" style="padding-top:8px">no patterns</span>`;
+    h += `</div></div>`;
+  }
+  h += `</div>`;
+  if (p.pats.length) {
+    const cursel = p.pats.find(q => q.g + q.n === sel) || p.pats[0];
     h += `<div class="edit"><span>Move</span>
-      <select id="mvFrom" aria-label="Pattern to move">${p.pats.map(q => `<option value="${q.g+q.n}" ${q===cursel?'selected':''}>${q.g}${String(q.n).padStart(2,'0')}</option>`).join('')}</select>
+      <select id="mvFrom" aria-label="Pattern to move">${p.pats.map(q => `<option value="${q.g+q.n}" ${q===cursel?'selected':''}>${label(q)}</option>`).join('')}</select>
       <span>to</span>
       <select id="mvG" aria-label="Target group">${['A','B','C','D'].map(g => `<option ${cursel&&cursel.g===g?'selected':''}>${g}</option>`).join('')}</select>
       <input id="mvN" type="number" min="1" max="99" value="${cursel ? cursel.n : 1}" aria-label="Target number">
       <button class="play" id="mvGo">Move</button>
       <span class="stat">or drag a pattern onto another pattern or a group</span></div>`;
-    if (p.changes.length) {
-      h += `<div class="pending"><strong>${p.changes.length} change${p.changes.length===1?'':'s'}, not yet on the K.O. II</strong>
-        <ul>${p.changes.map(c => `<li>${c}</li>`).join('')}</ul>
-        <div class="row">
-          <button class="btn small" id="writeProj" ${dev && p.node ? '' : 'disabled'}>Write to K.O. II</button>
-          <button class="btn small sec" id="dlProj">Download .tar</button>
-          <button class="btn small sec" id="undoProj">Undo changes</button>
-        </div>
-        <span class="stat">Before writing, the tool backs up this project from the K.O. II and downloads it. After writing, it reads the project back to verify.</span></div>`;
-    }
-    h += `<div class="roll" id="roll"></div>`;
   }
-  h += `<h3>Mixer</h3><div class="mixer" id="mixer"></div><p class="foot">Switch groups on and off while a pattern, scene or song plays (keys A, B, C, D; S + key for solo). This only changes what the tool plays; nothing is written to the K.O. II.</p>`;
-  if (p.scenes.length) {
-    const rows = [], sc = p.scenes;
-    for (let i = 0; i < sc.length; i++) {
-      const sig = sc[i].slice(1).join(); let j = i;
-      while (j + 1 < sc.length && sc[j+1].slice(1).join() === sig && sc[j+1][0] === sc[j][0] + 1) j++;
-      rows.push({ from: sc[i][0], to: sc[j][0], v: sc[i].slice(1) }); i = j;
-    }
-    const has = (g, n) => p.pats.some(x => x.g === g && x.n === n && x.notes);
-    const pad2 = n => String(n).padStart(2, '0');
-    h += `<h3>Scenes</h3><div class="tbl"><table><thead><tr><th>scene</th><th>A</th><th>B</th><th>C</th><th>D</th><th></th></tr></thead><tbody>`;
-    h += rows.map(r => `<tr><td>${r.from===r.to ? pad2(r.from) : pad2(r.from)+'–'+pad2(r.to)}</td>${r.v.map((n,gi)=>`<td class="${has('ABCD'[gi],n)?'':'dim'}">${pad2(n)}</td>`).join('')}<td><button class="play" data-play="scene" data-v="${r.v.join(',')}" aria-pressed="${isPlaying('scene', cur+':'+r.v.join(','))}" ${player ? '' : 'disabled'}>${isPlaying('scene', cur+':'+r.v.join(',')) ? '■' : '▶'}</button>
-      <button class="play del" data-del="scene" data-from="${r.from}" data-to="${r.to}" title="Clear ${r.from===r.to ? 'this scene' : 'these scenes'}; its patterns stay">✕ scene</button>
-      <button class="play del" data-del="scene-patterns" data-from="${r.from}" data-to="${r.to}" title="Clear ${r.from===r.to ? 'this scene' : 'these scenes'} and delete the patterns no other scene uses">✕ scene + patterns</button></td></tr>`).join('');
-    h += `</tbody></table></div><p class="foot">Grey numbers point to a pattern without notes: that group is silent in that scene.</p>`;
-  }
-  h += songHtml(p);
+  h += `</details>`;
   card.innerHTML = h;
   drawRoll();
-  drawMixer();
+}
+
+function sceneHtml(p, n){
+  const sc = p.scenes.find(s => s[0] === n);
+  if (!sc) return '';
+  const pad2 = x => String(x).padStart(2, '0');
+  const parts = sceneParts(p, n), bars = Math.max(1, ...parts.map(q => q.bars || 1));
+  const positions = p.song.map((s, i) => s === n ? i + 1 : 0).filter(Boolean);
+  const on = isPlaying('scene', cur + ':' + n);
+  let h = `<section class="scene"><div class="ph"><h3 style="font-size:16px;letter-spacing:0;text-transform:none;color:var(--ink)">Scene ${pad2(n)}</h3>
+    <span class="stat"><b>${bars}</b> bar${bars === 1 ? '' : 's'}</span>
+    <span class="stat">${positions.length ? `in the song at position ${positions.join(', ')}` : 'not in the song'}</span>
+    <button class="play" data-play="scene" data-scene="${n}" aria-pressed="${on}" ${player ? '' : 'disabled'} title="${player ? 'Play this scene on the K.O. II' : 'Connect the K.O. II first'}">${on ? '■ stop' : '▶ play scene'}</button>
+    <button class="play del" data-del="scene" data-from="${n}" data-to="${n}" title="Clear this scene; its patterns stay">✕ clear scene</button>
+    <button class="play del" data-del="scene-patterns" data-from="${n}" data-to="${n}" title="Clear this scene and delete the patterns no other scene uses">✕ clear + patterns</button></div>
+    <div class="chans">`;
+  'ABCD'.split('').forEach((g, gi) => {
+    const pn = sc[gi + 1], pat = pn ? p.pats.find(q => q.g === g && q.n === pn) : null;
+    const opts = `<option value="0"${pn === 0 ? ' selected' : ''}>no pattern</option>` + p.pats.filter(q => q.g === g).map(q => `<option value="${q.n}"${q.n === pn ? ' selected' : ''}>pattern ${pad2(q.n)}${q.notes ? '' : ' (empty)'}</option>`).join('')
+      + (pn && !pat ? `<option value="${pn}" selected>pattern ${pad2(pn)} (empty)</option>` : '');
+    const info = pat && pat.notes ? `${pat.bars} bar${pat.bars === 1 ? '' : 's'} · ${pat.notes} notes` : 'silent';
+    const selected = pat && sel === g + pn;
+    h += `<div class="chan${groupAudible(g) ? '' : ' off'}${selected ? ' sel' : ''}" style="--gc:${GC[g]}">
+      <div class="gl" style="background:${GC[g]}">${g}</div>
+      <select data-scene-pat="${g}" aria-label="Pattern for group ${g} in scene ${pad2(n)}">${opts}</select>
+      <span class="pt">${info}</span>
+      <span class="btns">
+        <button data-mix="${g}" class="${mixer[g] ? 'on' : ''}" aria-pressed="${mixer[g]}" title="Group ${g} on/off (key ${g.toLowerCase()})">${mixer[g] ? 'on' : 'off'}</button>
+        <button data-solo="${g}" class="solo" aria-pressed="${soloGroup === g}" title="Solo group ${g} (hold S and press ${g.toLowerCase()})">solo</button>
+        ${pat && pat.notes ? `<button data-show="${g + pn}" aria-pressed="${!!selected}" title="Show the notes of this pattern">notes</button>` : ''}
+      </span></div>`;
+  });
+  h += `</div><p class="foot">On/off and solo only change what the tool plays (keys A–D, hold S for solo); nothing is written. Choosing another pattern for a group is a change you write to the K.O. II.</p>
+    <div class="roll" id="roll"></div></section>`;
+  return h;
 }
 
 function groupAudible(g){ return soloGroup ? soloGroup === g : mixer[g]; }
-function applyMixer(){ if (player) for (const g of 'ABCD') player.setMuted(g, !groupAudible(g)); drawMixer(); }
-function drawMixer(){
-  const el = $('#mixer'); if (!el) return;
-  const p = DATA[cur];
-  let now = {};
-  if (playing && playing.kind === 'scene') { const v = playing.key.split(':')[1].split(',').map(Number); 'ABCD'.split('').forEach((g, i) => now[g] = v[i]); }
-  else if (playing && playing.kind === 'pat') { const x = p.pats.find(q => cur + ':' + q.g + q.n === playing.key); if (x) now[x.g] = x.n; }
-  el.innerHTML = 'ABCD'.split('').map(g => {
-    const pat = now[g] ? p.pats.find(q => q.g === g && q.n === now[g]) : null;
-    const info = now[g] ? `${g}${String(now[g]).padStart(2, '0')}${pat && pat.notes ? '' : ' (empty)'}` : (playing ? '–' : 'not playing');
-    return `<div class="ch${groupAudible(g) ? '' : ' off'}" style="--gc:${GC[g]}"><div class="top"><div class="gl" style="background:${GC[g]}">${g}</div><span class="pt">${info}</span></div>
-      <div class="btns"><button data-mix="${g}" class="${mixer[g] ? 'on' : ''}" aria-pressed="${mixer[g]}" title="Group ${g} on/off (key ${g.toLowerCase()})">${mixer[g] ? 'on' : 'off'}</button>
-      <button data-solo="${g}" class="solo" aria-pressed="${soloGroup === g}" title="Solo group ${g}">solo</button></div></div>`;
-  }).join('');
-}
+function applyMixer(){ if (player) for (const g of 'ABCD') player.setMuted(g, !groupAudible(g)); render(); }
 function sceneParts(p, sceneNo){
   const sc = p.scenes.find(s => s[0] === sceneNo);
   if (!sc) return [];
@@ -320,7 +357,7 @@ function drawRoll(){
   const el = $('#roll'); if (!el) return;
   const p = DATA[cur];
   let x = sel && p.pats.find(q => q.g + q.n === sel);
-  if (!x) { x = p.pats.find(q => q.notes); if (!x) { el.innerHTML = ''; return; } sel = x.g + x.n; }
+  if (!x) { x = sceneParts(p, selScene).find(q => q.notes); if (!x) { el.innerHTML = ''; return; } sel = x.g + x.n; }
   document.querySelectorAll('.pat').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === sel));
   const bars = Math.max(1, x.bars), len = bars * TPB;
   const pads = [...new Set(x.ev.map(e => e[0]))].sort((a, b) => a - b);
@@ -422,6 +459,20 @@ async function writeProject(){
   } catch (e) { progress(null); status(e.message || String(e), true); }
   finally { btns.forEach(b => b.disabled = false); }
 }
+function playScene(n, toggle){
+  if (!player) return;
+  const key = cur + ':' + n;
+  if (toggle && isPlaying('scene', key)) { stopPlay(); render(); return; }
+  stopPlay();
+  playing = { kind: 'scene', key };
+  applyMixer();
+  player.play(sceneParts(DATA[cur], n), DATA[cur].bpm);
+  render();
+}
+function pickScene(n){
+  selScene = n; sel = null;
+  if (playing && playing.kind === 'scene') playScene(n, false); else render();
+}
 function isPlaying(kind, key){ return !!playing && playing.kind === kind && playing.key === key; }
 function showHead(){ return playing && playing.kind === 'pat' && playing.key === cur + ':' + sel; }
 function stopPlay(){ if (player) player.stop(); playing = null; }
@@ -491,21 +542,35 @@ document.addEventListener('click', ev => {
       if (isPlaying('song', String(cur))) { stopPlay(); render(); }
       else { stopPlay(); playing = { kind: 'song', key: String(cur) }; applyMixer(); player.playSegments(p.song.map(n => sceneParts(p, n)), p.bpm); render(); }
     }
-    else {
-      const v = pl.dataset.v.split(',').map(Number);
-      const pats = ['A','B','C','D'].map((g, i) => DATA[cur].pats.find(q => q.g === g && q.n === v[i])).filter(q => q && q.notes);
-      togglePlay('scene', cur + ':' + pl.dataset.v, pats);
-    }
+    else playScene(+pl.dataset.scene, true);
     return;
   }
-  const pb = ev.target.closest('.pbtn'); if (pb) { stopPlay(); cur = +pb.dataset.i; sel = null; render(); return; }
+  const ps = ev.target.closest('[data-pick-scene]');
+  if (ps) { pickScene(+ps.dataset.pickScene); return; }
+  const sh = ev.target.closest('[data-show]');
+  if (sh) { sel = sh.dataset.show; render(); return; }
+  const pb = ev.target.closest('.pbtn'); if (pb) { stopPlay(); cur = +pb.dataset.i; sel = null; selScene = null; render(); return; }
   const pt = ev.target.closest('.pat'); if (pt) { sel = pt.dataset.k; if (playing && playing.kind === 'pat') { stopPlay(); playSelected(); } else drawRoll(); }
 });
 document.addEventListener('change', ev => {
-  const sel = ev.target.closest('[data-song-scene]');
-  if (!sel) return;
-  const p = DATA[cur], song = [...p.song], i = +sel.dataset.songScene;
-  song[i] = +sel.value;
+  const sp = ev.target.closest('[data-scene-pat]');
+  if (sp) {
+    const p = DATA[cur], g = sp.dataset.scenePat, n = +sp.value;
+    stopPlay();
+    try {
+      const tar = setScenePattern(p.tar, selScene, g, n);
+      const msg = `Scene ${String(selScene).padStart(2, '0')}: group ${g} ${n ? 'now plays pattern ' + String(n).padStart(2, '0') : 'has no pattern'}`;
+      DATA[cur] = { ...parseProject(p.p, untar(tar)), tar, orig: p.orig, node: p.node, changes: [...p.changes, msg] };
+      sel = n ? g + n : null;
+      status(msg + '. Not written yet.');
+      render();
+    } catch (e) { status(e.message || String(e), true); }
+    return;
+  }
+  const ss = ev.target.closest('[data-song-scene]');
+  if (!ss) return;
+  const p = DATA[cur], song = [...p.song], i = +ss.dataset.songScene;
+  song[i] = +ss.value;
   applySong(song, `Song: position ${i + 1} now plays scene ${String(song[i]).padStart(2, '0')}`);
 });
 let soloKey = false;
@@ -546,14 +611,14 @@ document.addEventListener('keydown', ev => {
     if (soloKey) soloGroup = soloGroup === g ? null : g; else mixer[g] = !mixer[g];
     applyMixer(); ev.preventDefault(); return;
   }
-  if (ev.key === ' ' && !ev.target.closest('button')) { ev.preventDefault(); if (playing) { stopPlay(); render(); } else playSelected(); return; }
+  if (ev.key === ' ' && !ev.target.closest('button')) { ev.preventDefault(); if (playing) { stopPlay(); render(); } else playScene(selScene, true); return; }
   if (/^[1-9]$/.test(ev.key) && DATA[+ev.key - 1]) { stopPlay(); cur = +ev.key - 1; sel = null; render(); }
   if (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') {
-    const list = DATA[cur].pats; if (!list.length) return;
-    let i = list.findIndex(q => q.g + q.n === sel);
+    const list = DATA[cur].scenes.map(sc => sc[0]); if (!list.length) return;
+    let i = list.indexOf(selScene);
     i = (i + (ev.key === 'ArrowRight' ? 1 : -1) + list.length) % list.length;
-    sel = list[i].g + list[i].n; ev.preventDefault();
-    if (playing && playing.kind === 'pat') { stopPlay(); playSelected(); } else drawRoll();
+    ev.preventDefault();
+    pickScene(list[i]);
   }
 });
 window.addEventListener('beforeunload', ev => { if (DATA.some(p => p.changes && p.changes.length)) { ev.preventDefault(); ev.returnValue = ''; } });
