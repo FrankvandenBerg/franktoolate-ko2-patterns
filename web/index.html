@@ -60,6 +60,7 @@ th,td{padding:4px 12px 4px 0;text-align:left;white-space:nowrap}
 th{color:var(--muted);font-weight:400;border-bottom:1px solid var(--line)}
 td.dim{color:var(--muted)}
 .roll{display:flex;flex-direction:column;gap:8px;min-width:0}
+.chans .roll{margin:2px 0 8px 18px;padding-left:12px;border-left:2px solid var(--line)}
 .rollhead{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline}
 .rollhead strong{font-size:18px}
 .rollscroll{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
@@ -171,7 +172,8 @@ const { KO2, Player, untar, parseProject, movePattern, setSong, deletePatterns, 
 const GC = { A:'var(--a)', B:'var(--b)', C:'var(--c)', D:'var(--d)' };
 const TPB = 384;
 const $ = s => document.querySelector(s);
-const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null, selScene = null, focusSel = null, libOpen = false, editMode = false, noteSel = -1;
+const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null, selScene = null, focusSel = null, libOpen = false, editGroup = null, noteSel = -1;
+const openRolls = new Set(); let rollsTouched = false;
 // Following the K.O. II's own playback via its MIDI clock (24 per quarter note) and start/stop.
 const follow = { running: false, clocks: 0, raf: 0, lastNote: 0 }; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
 let projDirNode = 2000, DATA = [], soundNames = {}, cur = 0, sel = null, dev = null, player = null, playing = null; // playing: {kind:'pat'|'scene', key}
@@ -189,7 +191,7 @@ $('#connect').addEventListener('click', async () => {
     player = new Player(dev.output);
     dev.onRealtime = onDeviceMidi;
     dev.onFileEvent = onDeviceFileEvent;
-    player.onTick = (f, seg) => { document.querySelectorAll('.pos').forEach((el, i) => el.classList.toggle('now', f != null && playing && playing.kind === 'song' && i === seg)); const g = document.querySelector('.rollgrid'); const ph = document.querySelector('.playhead'); if (!g || !ph) return; ph.hidden = f == null || !showHead(); if (f != null) g.style.setProperty('--ph', f); };
+    player.onTick = updatePlayheads;
     const info = await dev.greet();
     $('#meta').innerHTML = `${info.product||'EP-133'} · OS ${info.os_version||'?'}<br>serial ${info.serial||'?'}`;
     await dev.fsInit();
@@ -302,7 +304,7 @@ function render(){
   }
   h += `</details>`;
   card.innerHTML = h;
-  drawRoll();
+  drawRolls();
 }
 
 function sceneHtml(p, n){
@@ -333,11 +335,12 @@ function sceneHtml(p, n){
       <span class="btns">
         <button data-mix="${g}" class="${mixer[g] ? 'on' : ''}" aria-pressed="${mixer[g]}" title="Group ${g} on/off (key ${g.toLowerCase()})">${mixer[g] ? 'on' : 'off'}</button>
         <button data-solo="${g}" class="solo" aria-pressed="${soloGroup === g}" title="Solo group ${g} (hold S and press ${g.toLowerCase()})">solo</button>
-        ${pn ? `<button data-show="${g + pn}" aria-pressed="${sel === g + pn}" title="Show and edit the notes of this pattern">notes</button>` : ''}
-      </span></div>`;
+        ${pn ? `<button data-roll="${g}" aria-expanded="${openRolls.has(g)}" title="Show or hide the piano roll for group ${g}">${openRolls.has(g) ? '▾' : '▸'} notes</button>` : ''}
+      </span></div>
+      ${pn && openRolls.has(g) ? `<div class="roll" id="roll-${g}" data-g="${g}"></div>` : ''}`;
   });
   h += `</div><p class="foot">On/off and solo only change what the tool plays (keys A–D, hold S for solo); nothing is written. Choosing another pattern for a group is a change you write to the K.O. II.</p>
-    <div class="roll" id="roll"></div></section>`;
+    </section>`;
   return h;
 }
 
@@ -376,34 +379,33 @@ function applySong(next, msg){
     render();
   } catch (e) { status(e.message || String(e), true); }
 }
-// The pattern behind `sel`; a scene may point at a number that has no file yet (an empty pattern).
-function rollPattern(p){
-  if (sel) {
-    const x = p.pats.find(q => q.g + q.n === sel);
-    if (x) return x;
-    const m = /^([ABCD])(\d+)$/.exec(sel);
-    if (m) return { g: m[1], n: +m[2], bars: 1, notes: 0, ev: [], raw: null, virtual: true };
-  }
-  const x = sceneParts(p, selScene).find(q => q.notes);
-  if (x) sel = x.g + x.n;
-  return x || null;
+// The pattern a group plays in the selected scene. A scene may point at a number that has no file yet.
+function patFor(p, g){
+  const sc = p.scenes.find(s => s[0] === selScene); if (!sc) return null;
+  const pn = sc['ABCD'.indexOf(g) + 1]; if (!pn) return null;
+  return p.pats.find(q => q.g === g && q.n === pn) || { g, n: pn, bars: 1, notes: 0, ev: [], raw: null, virtual: true };
 }
-function drawRoll(){
-  const el = $('#roll'); if (!el) return;
-  const p = DATA[cur];
-  const x = rollPattern(p);
+function editPattern(){ return editGroup ? patFor(DATA[cur], editGroup) : null; }
+function drawRolls(){
+  const p = DATA[cur]; if (!p) return;
+  if (!rollsTouched && !openRolls.size) { const first = 'ABCD'.split('').find(g => { const x = patFor(p, g); return x && x.notes; }); if (first) openRolls.add(first); }
+  document.querySelectorAll('.roll[data-g]').forEach(el => drawRoll(el.dataset.g));
+}
+function drawRoll(g){
+  const el = document.getElementById('roll-' + g); if (!el) return;
+  const p = DATA[cur], x = patFor(p, g);
   if (!x) { el.innerHTML = ''; return; }
-  document.querySelectorAll('.pat').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === sel));
+  const editing = editGroup === g;
   const bars = Math.max(1, x.bars), len = bars * TPB;
   const used = [...new Set(x.ev.map(e => e[0]))];
   const k = x.g + x.n;
   let h = `<div class="rollhead"><strong>${label(x)}</strong>
-    <span class="stat"><b>${x.bars}</b> ${x.bars===1?'bar':'bars'}</span><span class="stat"><b>${x.notes}</b> notes</span><span class="stat"><b>${used.length}</b> pads</span>
-    <button class="play" data-play="pat" data-k="${k}" aria-pressed="${isPlaying('pat', cur+':'+k)}" ${player && x.notes ? '' : 'disabled'} title="${player ? 'Play on the K.O. II (space)' : 'Connect the K.O. II first'}">${isPlaying('pat', cur+':'+k) ? '■ stop' : '▶ play'}</button>
-    <span class="pill live" id="followBadge" ${follow.running ? '' : 'hidden'}>● K.O. II playing</span>
-    <button class="play" id="editToggle" aria-pressed="${editMode}">${editMode ? '✓ done editing' : '✎ edit notes'}</button>
+    <span class="stat"><b>${x.bars}</b> ${x.bars===1?'bar':'bars'}</span><span class="stat"><b>${x.notes}</b> notes</span>
+    <button class="play" data-play="pat" data-k="${k}" aria-pressed="${isPlaying('pat', cur+':'+k)}" ${player && x.notes ? '' : 'disabled'} title="${player ? 'Play only this pattern' : 'Connect the K.O. II first'}">${isPlaying('pat', cur+':'+k) ? '■ stop' : '▶ play'}</button>
+    <span class="pill live followBadge" ${follow.running ? '' : 'hidden'}>● K.O. II playing</span>
+    <button class="play" data-edit="${g}" aria-pressed="${editing}">${editing ? '✓ done editing' : '✎ edit notes'}</button>
     ${x.virtual ? '' : `<button class="play del" data-del="pattern" data-k="${k}" title="Delete this pattern (staged until you write)">✕ delete pattern</button>`}</div>`;
-  if (editMode) {
+  if (editing) {
     const n = x.ev[noteSel];
     h += `<div class="edit">
       <label>Length (bars) <input id="edBars" type="number" min="1" max="99" value="${bars}" style="width:4.5em"></label>
@@ -413,19 +415,19 @@ function drawRoll(){
         <button class="play del" id="edDel">✕ delete note</button>` : `<span class="stat">Click an empty spot to add a note, or press and drag to the right to draw a longer one. Drag a note to move it (also to another pad), drag its right edge to change its length. Select a note and press Delete to remove it. Hold Alt while dragging to leave the 1/16 grid.</span>`}
     </div>`;
   } else if (!x.notes) { el.innerHTML = h + `<p class="none">This pattern has no notes yet. Click "edit notes" to add some.</p>`; return; }
-  h += `<div class="rollscroll"><div class="rollgrid${editMode ? ' editing' : ''}" style="--gc:${GC[x.g]}"><div class="playhead" hidden></div><div class="lab" style="height:18px"></div><div class="ruler">`;
+  h += `<div class="rollscroll"><div class="rollgrid${editing ? ' editing' : ''}" data-len="${len}" style="--gc:${GC[x.g]}"><div class="playhead" hidden></div><div class="lab" style="height:18px"></div><div class="ruler">`;
   for (let b = 0; b < bars; b++) h += `<span style="left:${b/bars*100}%">${b+1}</span>`;
   h += `</div>`;
   const bg = `repeating-linear-gradient(90deg,var(--line) 0 1px,transparent 1px calc(100%/${bars*16})),repeating-linear-gradient(90deg,var(--muted) 0 1px,transparent 1px calc(100%/${bars}))`;
-  const rows = editMode ? [0,1,2,3,4,5,6,7,8,9,10,11] : used.sort((a, b) => a - b);
+  const rows = editing ? [0,1,2,3,4,5,6,7,8,9,10,11] : used.sort((a, b) => a - b);
   for (const pd of rows) {
     const sid = p.pads[x.g.toLowerCase() + (pd + 1)];
-    const name = sid ? (soundNames[sid] || 'sample ' + sid) : (editMode ? 'no sample' : '');
+    const name = sid ? (soundNames[sid] || 'sample ' + sid) : (editing ? 'no sample' : '');
     h += `<div class="lab${sid ? '' : ' nosample'}" title="${name}">pad ${KO2Lib.PAD_LABELS[pd] ?? pd + 1} <em>${name}</em></div><div class="lane" data-pad="${pd}" style="background-image:${bg}">`;
     x.ev.forEach((e, i) => {
       if (e[0] !== pd) return;
       const l = e[1] / len * 100, w = Math.max(e[2], 12) / len * 100;
-      h += `<div class="note${editMode && i === noteSel ? ' picked' : ''}" data-ni="${i}" style="left:${l}%;width:${Math.min(w, 100 - l)}%;opacity:${.35 + .65 * e[3] / 127}" title="step ${Math.floor(e[1] / 24) + 1} · velocity ${e[3]}"></div>`;
+      h += `<div class="note${editing && i === noteSel ? ' picked' : ''}" data-ni="${i}" style="left:${l}%;width:${Math.min(w, 100 - l)}%;opacity:${.35 + .65 * e[3] / 127}" title="step ${Math.floor(e[1] / 24) + 1} · velocity ${e[3]}"></div>`;
     });
     h += `</div>`;
   }
@@ -452,10 +454,10 @@ function pitchFor(x, pad){ const e = x.ev.find(q => q[0] === pad); return e ? e[
 // Pointer editing in the piano roll
 let drag = null;
 document.addEventListener('pointerdown', ev => {
-  if (!editMode) return;
+  if (!editGroup) return;
   const lane = ev.target.closest('.rollgrid.editing .lane');
   if (!lane) return;
-  const p = DATA[cur], x = rollPattern(p); if (!x) return;
+  const x = editPattern(); if (!x) return;
   const len = Math.max(1, x.bars) * TPB, rect = lane.getBoundingClientRect();
   const tickAt = cx => Math.max(0, Math.min(len - 1, (cx - rect.left) / rect.width * len));
   const snap = (t, free) => free ? Math.round(t) : Math.floor(t / 24) * 24;
@@ -511,7 +513,7 @@ document.addEventListener('pointerup', () => {
     const ev2 = [...d.x.ev, [d.pad, d.startTick, d.dur, 100, pitchFor(d.x, d.pad), 0]];
     const idx = sortedIndexAfterBuild(ev2, ev2.length - 1);
     commitNotes(d.x, ev2);
-    noteSel = idx; drawRoll();
+    noteSel = idx; drawRolls();
     return;
   }
   if (!d.moved) return;
@@ -521,16 +523,16 @@ document.addEventListener('pointerup', () => {
   else if (d.dur != null) e[2] = d.dur;
   const idx = sortedIndexAfterBuild(ev2, noteSel);
   commitNotes(d.x, ev2);
-  noteSel = idx; drawRoll();
+  noteSel = idx; drawRolls();
 });
 // The file is stored sorted by position; work out where the edited note ends up so it stays selected.
 function sortedIndexAfterBuild(ev, i){
   const order = ev.map((e, j) => j).sort((a, b) => ev[a][1] - ev[b][1] || a - b);
   return order.indexOf(i);
 }
-function drawEditPanelOnly(){ drawRoll(); }
+function drawEditPanelOnly(){ drawRolls(); }
 function deleteSelectedNote(){
-  const x = rollPattern(DATA[cur]); if (!x || noteSel < 0 || !x.ev[noteSel]) return false;
+  const x = editPattern(); if (!x || noteSel < 0 || !x.ev[noteSel]) return false;
   const ev2 = x.ev.filter((e, i) => i !== noteSel);
   noteSel = -1;
   commitNotes(x, ev2);
@@ -682,23 +684,35 @@ function onDeviceMidi(d){
 }
 function scheduleFollowFrame(){ if (!follow.raf) follow.raf = requestAnimationFrame(() => { follow.raf = 0; drawFollow(); }); }
 function showFollow(){
-  const b = $('#followBadge'); if (b) b.hidden = !follow.running;
+  document.querySelectorAll('.followBadge').forEach(b => b.hidden = !follow.running);
   if (!follow.running) {
     document.querySelectorAll('.note.hit').forEach(n => n.classList.remove('hit'));
-    const ph = document.querySelector('.playhead'); if (ph && !playing) ph.hidden = true;
+    if (!playing) document.querySelectorAll('.playhead').forEach(ph => ph.hidden = true);
   }
 }
-// Move the playhead and light up the notes under it while the K.O. II plays.
+// Move the playheads and light up the notes under them while the K.O. II plays (every open roll).
 function drawFollow(){
   if (!follow.running || playing) return;
   const p = DATA[cur]; if (!p) return;
-  const x = rollPattern(p); const g = document.querySelector('.rollgrid'), ph = document.querySelector('.playhead');
-  if (!x || !g || !ph) return;
-  const len = Math.max(1, x.bars) * TPB, t = (follow.clocks * 4) % len;
-  ph.hidden = false; g.style.setProperty('--ph', t / len);
-  document.querySelectorAll('.rollgrid .note').forEach(n => {
-    const e = x.ev[+n.dataset.ni]; if (!e) return;
-    n.classList.toggle('hit', t >= e[1] && t < e[1] + Math.max(e[2], 24));
+  document.querySelectorAll('.roll[data-g]').forEach(el => {
+    const x = patFor(p, el.dataset.g), g = el.querySelector('.rollgrid'), ph = el.querySelector('.playhead');
+    if (!x || !g || !ph) return;
+    const len = Math.max(1, x.bars) * TPB, t = (follow.clocks * 4) % len;
+    ph.hidden = false; g.style.setProperty('--ph', t / len);
+    el.querySelectorAll('.note').forEach(n => {
+      const e = x.ev[+n.dataset.ni]; if (!e) return;
+      n.classList.toggle('hit', t >= e[1] && t < e[1] + Math.max(e[2], 24));
+    });
+  });
+}
+function updatePlayheads(f, seg){
+  document.querySelectorAll('.pos').forEach((el, i) => el.classList.toggle('now', f != null && playing && playing.kind === 'song' && i === seg));
+  const segStart = (player && player.segmentStarts && player.segmentStarts[seg]) || 0;
+  const t = f == null ? null : f * player.loopTicks - segStart;
+  document.querySelectorAll('.rollgrid').forEach(g => {
+    const ph = g.querySelector('.playhead'); if (!ph) return;
+    ph.hidden = t == null;
+    if (t != null) g.style.setProperty('--ph', (t % +g.dataset.len) / +g.dataset.len);
   });
 }
 function isPlaying(kind, key){ return !!playing && playing.kind === kind && playing.key === key; }
@@ -721,7 +735,10 @@ document.addEventListener('click', ev => {
   if (ev.target.closest('#mvGo')) { applyMove($('#mvFrom').value, $('#mvG').value, +$('#mvN').value); return; }
   if (ev.target.closest('#writeProj')) { writeProject(); return; }
   if (ev.target.closest('#openOnDevice')) { openOnDevice(); return; }
-  if (ev.target.closest('#editToggle')) { editMode = !editMode; noteSel = -1; drawRoll(); return; }
+  const et = ev.target.closest('[data-edit]');
+  if (et) { editGroup = editGroup === et.dataset.edit ? null : et.dataset.edit; noteSel = -1; drawRolls(); return; }
+  const rt = ev.target.closest('[data-roll]');
+  if (rt) { const g = rt.dataset.roll; rollsTouched = true; if (openRolls.has(g)) { openRolls.delete(g); if (editGroup === g) editGroup = null; } else openRolls.add(g); render(); return; }
   if (ev.target.closest('#edDel')) { deleteSelectedNote(); return; }
   if (ev.target.closest('#dlProj')) { saveFile(DATA[cur].tar, `KO2-P${DATA[cur].p}-edited-${stamp()}.tar`); return; }
   if (ev.target.closest('#undoProj')) { stopPlay(); const p = DATA[cur]; DATA[cur] = makeProject(p.p, p.orig, p.node); sel = null; status('Changes undone.'); render(); return; }
@@ -758,15 +775,13 @@ document.addEventListener('click', ev => {
   }
   const ps = ev.target.closest('[data-pick-scene]');
   if (ps) { focusSel = { kind: 'scene', n: +ps.dataset.pickScene }; pickScene(+ps.dataset.pickScene); return; }
-  const sh = ev.target.closest('[data-show]');
-  if (sh) { if (sel !== sh.dataset.show) noteSel = -1; sel = sh.dataset.show; render(); return; }
   const pb = ev.target.closest('.pbtn'); if (pb) { stopPlay(); cur = +pb.dataset.i; sel = null; selScene = null; focusSel = null; render(); return; }
-  const pt = ev.target.closest('.pat'); if (pt) { sel = pt.dataset.k; focusSel = { kind: 'pattern', k: pt.dataset.k }; render(); if (playing && playing.kind === 'pat') { stopPlay(); playSelected(); } else drawRoll(); }
+  const pt = ev.target.closest('.pat'); if (pt) { sel = pt.dataset.k; focusSel = { kind: 'pattern', k: pt.dataset.k }; { const g = pt.dataset.k[0], x = patFor(DATA[cur], g); if (x && x.g + x.n === pt.dataset.k) { openRolls.add(g); rollsTouched = true; } } render(); if (playing && playing.kind === 'pat') { stopPlay(); playSelected(); } }
 });
 document.addEventListener('toggle', ev => { if (ev.target.matches && ev.target.matches('details.lib')) libOpen = ev.target.open; }, true);
 document.addEventListener('change', ev => {
   if (ev.target.id === 'edVel' || ev.target.id === 'edLen' || ev.target.id === 'edBars') {
-    const x = rollPattern(DATA[cur]); if (!x) return;
+    const x = editPattern(); if (!x) return;
     if (ev.target.id === 'edBars') { const b = Math.max(1, Math.min(99, Math.round(+ev.target.value || 1))); commitNotes(x, x.ev, b); return; }
     const ev2 = x.ev.map(e => [...e]), e = ev2[noteSel]; if (!e) return;
     if (ev.target.id === 'edVel') e[3] = Math.max(1, Math.min(127, Math.round(+ev.target.value || 100)));
@@ -827,8 +842,8 @@ document.addEventListener('drop', ev => {
 });
 document.addEventListener('keydown', ev => {
   if (!DATA.length || ev.target.closest('input,select')) return;
-  if ((ev.key === 'Delete' || ev.key === 'Backspace') && editMode && noteSel >= 0) { ev.preventDefault(); deleteSelectedNote(); return; }
-  if (ev.key === 'Escape' && editMode && noteSel >= 0) { noteSel = -1; drawRoll(); return; }
+  if ((ev.key === 'Delete' || ev.key === 'Backspace') && editGroup && noteSel >= 0) { ev.preventDefault(); deleteSelectedNote(); return; }
+  if (ev.key === 'Escape' && editGroup && noteSel >= 0) { noteSel = -1; drawRolls(); return; }
   if ((ev.key === 'Delete' || ev.key === 'Backspace') && focusSel) { ev.preventDefault(); stageDelete(focusSel, ev.shiftKey); return; }
   if (ev.key === 'Escape' && focusSel) { focusSel = null; render(); return; }
   if (/^[abcd]$/i.test(ev.key) && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
