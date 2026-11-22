@@ -372,6 +372,11 @@
   // Plays patterns on the device by sending timestamped MIDI notes.
   // Note map from the TE guide (14.2): group A = 36–47, B = 48–59, C = 60–71, D = 72–83, on channel 1.
   const NOTE_BASE = { A: 36, B: 48, C: 60, D: 72 };
+  // Pad files p01–p12 (and pattern pad indexes 0–11) follow the pad grid 7 8 9 / 4 5 6 / 1 2 3 / . 0 ENTER,
+  // while MIDI notes per group run . 0 ENTER 1 2 … 9. This maps a pad index to its note offset.
+  // (Confirmed on the device: pressing pad "1" sends base + 3.)
+  const PAD_NOTE_OFFSET = [9, 10, 11, 6, 7, 8, 3, 4, 5, 0, 1, 2];
+  const PAD_LABELS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', 'ENTER'];
   const TICKS_PER_BAR = 384; // 96 ppqn, 4/4
 
   class Player {
@@ -405,7 +410,7 @@
           for (let off = 0; off < segTicks; off += len) {
             for (const [pad, pos, dur, vel] of p.ev) {
               if (pos >= len) continue;
-              events.push({ t: segStart + off + pos, g: p.g, note: NOTE_BASE[p.g] + pad, vel: Math.max(1, Math.min(127, vel)), dur: Math.max(dur, 12) });
+              events.push({ t: segStart + off + pos, g: p.g, note: NOTE_BASE[p.g] + (PAD_NOTE_OFFSET[pad] ?? pad), vel: Math.max(1, Math.min(127, vel)), dur: Math.max(dur, 12) });
             }
           }
         }
@@ -455,6 +460,6 @@
     }
   }
 
-  const api = { KO2, Player, untar, parseProject, pack7, unpack7, tarEntries, buildTar, movePattern, setSong, deletePatterns, deleteScenes, setScenePattern };
+  const api = { KO2, Player, untar, parseProject, pack7, unpack7, tarEntries, buildTar, movePattern, setSong, deletePatterns, deleteScenes, setScenePattern, PAD_LABELS, PAD_NOTE_OFFSET };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KO2Lib = api;
 })(typeof window !== 'undefined' ? window : globalThis);
