@@ -36,6 +36,7 @@ h1 span{color:var(--orange)}
 .pbtn{font:inherit;cursor:pointer;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:10px 4px 8px;display:flex;flex-direction:column;align-items:center;gap:2px}
 .pbtn b{font-family:var(--mono);font-size:18px;font-weight:500}
 .pbtn small{font-family:var(--mono);font-size:10px;color:var(--muted)}
+.projhint{margin:-8px 0 0;font-size:12px;color:var(--muted)}
 .pbtn.active{background:var(--orange);border-color:var(--orange);color:#fff;box-shadow:0 0 0 3px color-mix(in srgb,var(--orange) 25%,transparent)}
 .pbtn.active small{color:#fff;opacity:.85}
 .pbtn[data-locked]{cursor:default}
@@ -265,6 +266,7 @@ details.lib[open]{display:flex;flex-direction:column;gap:12px}
 
   <p class="intro" id="intro">Reading is read-only: the projects are requested over MIDI and nothing on the sampler changes until you choose to write.</p>
   <nav class="projects" id="projects" aria-label="Projects" hidden></nav>
+  <p class="projhint" id="projHint" hidden>To switch project, hold <kbd>MAIN</kbd> on the K.O. II and press pad <kbd>1</kbd>–<kbd>9</kbd>. The tool follows the active project (orange).</p>
   <section class="card" id="project" hidden></section>
   <p class="foot">Patterns are numbered 01–99 per group (A–D), as in the Teenage Engineering guide. "b" is the pattern length in bars (1 bar = 384 ticks at 96 ppqn), "n" the number of notes. Pads are named by the labels printed on them (7 8 9 / 4 5 6 / 1 2 3 / . 0 ENTER). Left/right arrows switch scene (also while a scene plays), keys 1–9 switch project, space plays or stops the selected scene. Moving: drag a pattern onto another pattern to swap them, or onto a group to move it there; within a group, scenes follow along. Deleting a pattern leaves its group silent in scenes that used it; clearing a scene also removes it from the song. Playback sends MIDI notes on channel 1 (group A = notes 36–47, B = 48–59, C = 60–71, D = 72–83, in the order . 0 ENTER 1–9); do not leave the K.O. II in record mode, or the notes will be recorded. Pads in keys mode play at their root note.</p>
 </div>
@@ -356,10 +358,11 @@ function render(){
   if (cur >= DATA.length) cur = 0;
   $('#intro').hidden = true;
   const nav = $('#projects'); nav.hidden = false;
+  const hint = $('#projHint'); if (hint) hint.hidden = !dev;
   nav.innerHTML = DATA.map((p, i) => {
     const n = p.scenes.length;
     const active = dev ? p.node && p.node === deviceActiveNode : i === cur;
-    return `<button class="pbtn${active ? ' active' : ''}" aria-current="${active ? 'true' : 'false'}" ${dev ? 'tabindex="-1" data-locked="1"' : `data-i="${i}"`} title="${dev ? (active ? 'Active on the K.O. II' : 'Switch projects on the K.O. II itself') : 'Show this project'}"><b>${p.p}</b><small>${p.changes && p.changes.length ? '● edited' : (n ? n + ' scene' + (n === 1 ? '' : 's') : 'empty')}</small></button>`;
+    return `<button class="pbtn${active ? ' active' : ''}" aria-current="${active ? 'true' : 'false'}" ${dev ? 'tabindex="-1" data-locked="1"' : `data-i="${i}"`} title="${dev ? (active ? 'Active on the K.O. II' : 'On the K.O. II: hold MAIN and press pad ' + (+p.p)) : 'Show this project'}"><b>${p.p}</b><small>${p.changes && p.changes.length ? '● edited' : (n ? n + ' scene' + (n === 1 ? '' : 's') : 'empty')}</small></button>`;
   }).join('');
   const p = DATA[cur], card = $('#project'); card.hidden = false;
   const pad2 = n => String(n).padStart(2, '0');
@@ -1220,7 +1223,7 @@ document.addEventListener('click', ev => {
   const gs = ev.target.closest('[data-goto-scene]'); if (gs) { selScene = +gs.dataset.gotoScene; sel = null; render(); const t = document.querySelector('.sect-scenes'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   const ps = ev.target.closest('[data-pick-scene]');
   if (ps) { focusSel = { kind: 'scene', n: +ps.dataset.pickScene }; pickScene(+ps.dataset.pickScene); return; }
-  const pb = ev.target.closest('.pbtn'); if (pb && pb.dataset.locked) { status('Switch projects on the K.O. II itself; the tool follows.'); return; }
+  const pb = ev.target.closest('.pbtn'); if (pb && pb.dataset.locked) { status('Switch projects on the K.O. II: hold MAIN and press pad 1–9. The tool follows.'); return; }
   if (pb) { stopPlay(); cur = +pb.dataset.i; sel = null; selScene = null; focusSel = null; render(); return; }
   const pt = ev.target.closest('.pat'); if (pt) { sel = pt.dataset.k; focusSel = { kind: 'pattern', k: pt.dataset.k }; { const g = pt.dataset.k[0], x = patFor(DATA[cur], g); if (x && x.g + x.n === pt.dataset.k) { openRolls.add(g); rollsTouched = true; } } render(); if (playing && playing.kind === 'pat') { stopPlay(); playSelected(); } }
 });
