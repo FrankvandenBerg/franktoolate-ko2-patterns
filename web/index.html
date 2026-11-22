@@ -90,6 +90,11 @@ td.dim{color:var(--muted)}
 .pos{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:5px;padding:5px 8px;background:var(--bg);display:flex;gap:6px;align-items:baseline}
 .pos .k{color:var(--muted);font-size:10px}
 .pos.now{border-color:var(--orange);box-shadow:inset 0 0 0 1px var(--orange)}
+.rollgrid.editing .lane{cursor:crosshair}
+.rollgrid.editing .note{cursor:grab;touch-action:none}
+.rollgrid.editing .note::after{content:"";position:absolute;right:0;top:0;bottom:0;width:6px;cursor:ew-resize}
+.note.picked{outline:2px solid var(--ink);outline-offset:1px;z-index:2}
+.lab.nosample{opacity:.55}
 .focus{outline:2px solid var(--orange)!important;outline-offset:2px}
 .chan[data-chan]{cursor:pointer}
 .hint{font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:6px;padding:8px 10px}
@@ -159,11 +164,11 @@ details.lib[open]{display:flex;flex-direction:column;gap:12px}
 
 <script src="ko2lib.js"></script>
 <script>
-const { KO2, Player, untar, parseProject, movePattern, setSong, deletePatterns, deleteScenes, setScenePattern } = window.KO2Lib;
+const { KO2, Player, untar, parseProject, movePattern, setSong, deletePatterns, deleteScenes, setScenePattern, buildPatternFile, setPatternFile } = window.KO2Lib;
 const GC = { A:'var(--a)', B:'var(--b)', C:'var(--c)', D:'var(--d)' };
 const TPB = 384;
 const $ = s => document.querySelector(s);
-const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null, selScene = null, focusSel = null, libOpen = false; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
+const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null, selScene = null, focusSel = null, libOpen = false, editMode = false, noteSel = -1; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
 let projDirNode = 2000, DATA = [], soundNames = {}, cur = 0, sel = null, dev = null, player = null, playing = null; // playing: {kind:'pat'|'scene', key}
 
 function status(t, err){ const s=$('#status'); s.textContent=t; s.classList.toggle('err', !!err); }
@@ -318,7 +323,7 @@ function sceneHtml(p, n){
       <span class="btns">
         <button data-mix="${g}" class="${mixer[g] ? 'on' : ''}" aria-pressed="${mixer[g]}" title="Group ${g} on/off (key ${g.toLowerCase()})">${mixer[g] ? 'on' : 'off'}</button>
         <button data-solo="${g}" class="solo" aria-pressed="${soloGroup === g}" title="Solo group ${g} (hold S and press ${g.toLowerCase()})">solo</button>
-        ${pat && pat.notes ? `<button data-show="${g + pn}" aria-pressed="${!!selected}" title="Show the notes of this pattern">notes</button>` : ''}
+        ${pn ? `<button data-show="${g + pn}" aria-pressed="${sel === g + pn}" title="Show and edit the notes of this pattern">notes</button>` : ''}
       </span></div>`;
   });
   h += `</div><p class="foot">On/off and solo only change what the tool plays (keys A–D, hold S for solo); nothing is written. Choosing another pattern for a group is a change you write to the K.O. II.</p>
@@ -361,34 +366,148 @@ function applySong(next, msg){
     render();
   } catch (e) { status(e.message || String(e), true); }
 }
+// The pattern behind `sel`; a scene may point at a number that has no file yet (an empty pattern).
+function rollPattern(p){
+  if (sel) {
+    const x = p.pats.find(q => q.g + q.n === sel);
+    if (x) return x;
+    const m = /^([ABCD])(\d+)$/.exec(sel);
+    if (m) return { g: m[1], n: +m[2], bars: 1, notes: 0, ev: [], raw: null, virtual: true };
+  }
+  const x = sceneParts(p, selScene).find(q => q.notes);
+  if (x) sel = x.g + x.n;
+  return x || null;
+}
 function drawRoll(){
   const el = $('#roll'); if (!el) return;
   const p = DATA[cur];
-  let x = sel && p.pats.find(q => q.g + q.n === sel);
-  if (!x) { x = sceneParts(p, selScene).find(q => q.notes); if (!x) { el.innerHTML = ''; return; } sel = x.g + x.n; }
+  const x = rollPattern(p);
+  if (!x) { el.innerHTML = ''; return; }
   document.querySelectorAll('.pat').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === sel));
   const bars = Math.max(1, x.bars), len = bars * TPB;
-  const pads = [...new Set(x.ev.map(e => e[0]))].sort((a, b) => a - b);
-  let h = `<div class="rollhead"><strong>${x.g}${String(x.n).padStart(2,'0')}</strong>
-    <span class="stat"><b>${x.bars}</b> ${x.bars===1?'bar':'bars'}</span><span class="stat"><b>${x.notes}</b> notes</span><span class="stat"><b>${pads.length}</b> pads</span>
-    <button class="play" data-play="pat" data-k="${x.g+x.n}" aria-pressed="${isPlaying('pat', cur+':'+x.g+x.n)}" ${player && x.notes ? '' : 'disabled'} title="${player ? 'Play on the K.O. II (space)' : 'Connect the K.O. II first'}">${isPlaying('pat', cur+':'+x.g+x.n) ? '■ stop' : '▶ play'}</button>
-    <button class="play del" data-del="pattern" data-k="${x.g+x.n}" title="Delete this pattern (staged until you write)">✕ delete pattern</button></div>`;
-  if (!x.notes) { el.innerHTML = h + `<p class="none">This pattern exists but contains no notes.</p>`; return; }
-  h += `<div class="rollscroll"><div class="rollgrid" style="--gc:${GC[x.g]}"><div class="playhead" hidden></div><div class="lab" style="height:18px"></div><div class="ruler">`;
+  const used = [...new Set(x.ev.map(e => e[0]))];
+  const k = x.g + x.n;
+  let h = `<div class="rollhead"><strong>${label(x)}</strong>
+    <span class="stat"><b>${x.bars}</b> ${x.bars===1?'bar':'bars'}</span><span class="stat"><b>${x.notes}</b> notes</span><span class="stat"><b>${used.length}</b> pads</span>
+    <button class="play" data-play="pat" data-k="${k}" aria-pressed="${isPlaying('pat', cur+':'+k)}" ${player && x.notes ? '' : 'disabled'} title="${player ? 'Play on the K.O. II (space)' : 'Connect the K.O. II first'}">${isPlaying('pat', cur+':'+k) ? '■ stop' : '▶ play'}</button>
+    <button class="play" id="editToggle" aria-pressed="${editMode}">${editMode ? '✓ done editing' : '✎ edit notes'}</button>
+    ${x.virtual ? '' : `<button class="play del" data-del="pattern" data-k="${k}" title="Delete this pattern (staged until you write)">✕ delete pattern</button>`}</div>`;
+  if (editMode) {
+    const n = x.ev[noteSel];
+    h += `<div class="edit">
+      <label>Length (bars) <input id="edBars" type="number" min="1" max="99" value="${bars}" style="width:4.5em"></label>
+      ${n ? `<span>Selected note: pad ${KO2Lib.PAD_LABELS[n[0]]}, step ${Math.floor(n[1] / 24) + 1}</span>
+        <label>Velocity <input id="edVel" type="number" min="1" max="127" value="${n[3]}" style="width:4.5em"></label>
+        <label>Length (steps) <input id="edLen" type="number" min="1" max="${bars * 16}" value="${Math.max(1, Math.round(n[2] / 24))}" style="width:4.5em"></label>
+        <button class="play del" id="edDel">✕ delete note</button>` : `<span class="stat">Click an empty spot to add a note. Drag a note to move it (also to another pad), drag its right edge to change its length. Select a note and press Delete to remove it. Hold Alt while dragging to leave the 1/16 grid.</span>`}
+    </div>`;
+  } else if (!x.notes) { el.innerHTML = h + `<p class="none">This pattern has no notes yet. Click "edit notes" to add some.</p>`; return; }
+  h += `<div class="rollscroll"><div class="rollgrid${editMode ? ' editing' : ''}" style="--gc:${GC[x.g]}"><div class="playhead" hidden></div><div class="lab" style="height:18px"></div><div class="ruler">`;
   for (let b = 0; b < bars; b++) h += `<span style="left:${b/bars*100}%">${b+1}</span>`;
   h += `</div>`;
   const bg = `repeating-linear-gradient(90deg,var(--line) 0 1px,transparent 1px calc(100%/${bars*16})),repeating-linear-gradient(90deg,var(--muted) 0 1px,transparent 1px calc(100%/${bars}))`;
-  for (const pd of pads) {
+  const rows = editMode ? [0,1,2,3,4,5,6,7,8,9,10,11] : used.sort((a, b) => a - b);
+  for (const pd of rows) {
     const sid = p.pads[x.g.toLowerCase() + (pd + 1)];
-    const name = sid ? (soundNames[sid] || 'sample ' + sid) : '';
-    h += `<div class="lab" title="${name}">pad ${KO2Lib.PAD_LABELS[pd] ?? pd + 1} <em>${name}</em></div><div class="lane" style="background-image:${bg}">`;
-    for (const e of x.ev.filter(e => e[0] === pd)) {
+    const name = sid ? (soundNames[sid] || 'sample ' + sid) : (editMode ? 'no sample' : '');
+    h += `<div class="lab${sid ? '' : ' nosample'}" title="${name}">pad ${KO2Lib.PAD_LABELS[pd] ?? pd + 1} <em>${name}</em></div><div class="lane" data-pad="${pd}" style="background-image:${bg}">`;
+    x.ev.forEach((e, i) => {
+      if (e[0] !== pd) return;
       const l = e[1] / len * 100, w = Math.max(e[2], 12) / len * 100;
-      h += `<div class="note" style="left:${l}%;width:${Math.min(w, 100 - l)}%;opacity:${.35 + .65 * e[3] / 127}" title="tick ${e[1]} · velocity ${e[3]}"></div>`;
-    }
+      h += `<div class="note${editMode && i === noteSel ? ' picked' : ''}" data-ni="${i}" style="left:${l}%;width:${Math.min(w, 100 - l)}%;opacity:${.35 + .65 * e[3] / 127}" title="step ${Math.floor(e[1] / 24) + 1} · velocity ${e[3]}"></div>`;
+    });
     h += `</div>`;
   }
   el.innerHTML = h + `</div></div>`;
+}
+
+// Apply edited notes to the pattern and stage the change (one entry per pattern while editing).
+function commitNotes(x, ev, bars){
+  const p = DATA[cur];
+  try {
+    const data = buildPatternFile(x.raw, ev, bars ?? x.bars);
+    const tar = setPatternFile(p.tar, x.g, x.n, data);
+    const msg = `Edited notes in pattern ${label(x)}`;
+    const changes = p.changes[p.changes.length - 1] === msg ? p.changes : [...p.changes, msg];
+    DATA[cur] = { ...parseProject(p.p, untar(tar)), tar, orig: p.orig, node: p.node, changes };
+    status(msg + '. Not written yet.');
+    const wasPlaying = playing && playing.kind === 'pat' && playing.key === cur + ':' + x.g + x.n;
+    render();
+    if (wasPlaying) { stopPlay(); playSelected(); }
+  } catch (e) { status(e.message || String(e), true); }
+}
+function pitchFor(x, pad){ const e = x.ev.find(q => q[0] === pad); return e ? e[4] : 60; }
+
+// Pointer editing in the piano roll
+let drag = null;
+document.addEventListener('pointerdown', ev => {
+  if (!editMode) return;
+  const lane = ev.target.closest('.rollgrid.editing .lane');
+  if (!lane) return;
+  const p = DATA[cur], x = rollPattern(p); if (!x) return;
+  const len = Math.max(1, x.bars) * TPB, rect = lane.getBoundingClientRect();
+  const tickAt = cx => Math.max(0, Math.min(len - 1, (cx - rect.left) / rect.width * len));
+  const snap = (t, free) => free ? Math.round(t) : Math.floor(t / 24) * 24;
+  const noteEl = ev.target.closest('.note');
+  ev.preventDefault();
+  if (noteEl) {
+    noteSel = +noteEl.dataset.ni;
+    const e = x.ev[noteSel], r = noteEl.getBoundingClientRect();
+    drag = { mode: ev.clientX > r.right - 7 ? 'resize' : 'move', x, startX: ev.clientX, startTick: e[1], startDur: e[2], pad: e[0], el: noteEl, len, rect, moved: false };
+    noteEl.setPointerCapture(ev.pointerId);
+    drawEditPanelOnly();
+  } else {
+    const pad = +lane.dataset.pad, t = snap(tickAt(ev.clientX), ev.altKey);
+    const ev2 = [...x.ev, [pad, t, 24, 100, pitchFor(x, pad), 0]];
+    noteSel = ev2.length - 1;
+    const sortedIdx = sortedIndexAfterBuild(ev2, noteSel);
+    commitNotes(x, ev2);
+    noteSel = sortedIdx;
+    drawRoll();
+  }
+});
+document.addEventListener('pointermove', ev => {
+  if (!drag) return;
+  const { x, len, rect } = drag;
+  const dt = (ev.clientX - drag.startX) / rect.width * len;
+  if (Math.abs(ev.clientX - drag.startX) > 2) drag.moved = true;
+  if (drag.mode === 'move') {
+    let t = drag.startTick + dt; t = ev.altKey ? Math.round(t) : Math.round(t / 24) * 24;
+    drag.tick = Math.max(0, Math.min(len - 1, t));
+    drag.el.style.left = (drag.tick / len * 100) + '%';
+    const under = document.elementFromPoint(ev.clientX, ev.clientY);
+    const lane = under && under.closest && under.closest('.rollgrid.editing .lane');
+    if (lane && +lane.dataset.pad !== drag.pad) { drag.newPad = +lane.dataset.pad; drag.moved = true; lane.appendChild(drag.el); }
+  } else {
+    let d = drag.startDur + dt; d = ev.altKey ? Math.round(d) : Math.round(d / 24) * 24;
+    drag.dur = Math.max(ev.altKey ? 1 : 24, Math.min(len - drag.startTick, d));
+    drag.el.style.width = (drag.dur / len * 100) + '%';
+  }
+});
+document.addEventListener('pointerup', () => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (!d.moved) return;
+  const ev2 = d.x.ev.map(e => [...e]);
+  const e = ev2[noteSel];
+  if (d.mode === 'move') { if (d.tick != null) e[1] = d.tick; if (d.newPad != null) { e[0] = d.newPad; e[4] = pitchFor(d.x, d.newPad); } }
+  else if (d.dur != null) e[2] = d.dur;
+  const idx = sortedIndexAfterBuild(ev2, noteSel);
+  commitNotes(d.x, ev2);
+  noteSel = idx; drawRoll();
+});
+// The file is stored sorted by position; work out where the edited note ends up so it stays selected.
+function sortedIndexAfterBuild(ev, i){
+  const order = ev.map((e, j) => j).sort((a, b) => ev[a][1] - ev[b][1] || a - b);
+  return order.indexOf(i);
+}
+function drawEditPanelOnly(){ drawRoll(); }
+function deleteSelectedNote(){
+  const x = rollPattern(DATA[cur]); if (!x || noteSel < 0 || !x.ev[noteSel]) return false;
+  const ev2 = x.ev.filter((e, i) => i !== noteSel);
+  noteSel = -1;
+  commitNotes(x, ev2);
+  return true;
 }
 
 function makeProject(id, tar, node){
@@ -507,7 +626,7 @@ function playScene(n, toggle){
   render();
 }
 function pickScene(n){
-  selScene = n; sel = null;
+  selScene = n; sel = null; noteSel = -1;
   if (playing && playing.kind === 'scene') playScene(n, false); else render();
 }
 function isPlaying(kind, key){ return !!playing && playing.kind === kind && playing.key === key; }
@@ -529,6 +648,8 @@ function playSelected(){
 document.addEventListener('click', ev => {
   if (ev.target.closest('#mvGo')) { applyMove($('#mvFrom').value, $('#mvG').value, +$('#mvN').value); return; }
   if (ev.target.closest('#writeProj')) { writeProject(); return; }
+  if (ev.target.closest('#editToggle')) { editMode = !editMode; noteSel = -1; drawRoll(); return; }
+  if (ev.target.closest('#edDel')) { deleteSelectedNote(); return; }
   if (ev.target.closest('#dlProj')) { saveFile(DATA[cur].tar, `KO2-P${DATA[cur].p}-edited-${stamp()}.tar`); return; }
   if (ev.target.closest('#undoProj')) { stopPlay(); const p = DATA[cur]; DATA[cur] = makeProject(p.p, p.orig, p.node); sel = null; status('Changes undone.'); render(); return; }
   const mx = ev.target.closest('[data-mix]');
@@ -565,12 +686,21 @@ document.addEventListener('click', ev => {
   const ps = ev.target.closest('[data-pick-scene]');
   if (ps) { focusSel = { kind: 'scene', n: +ps.dataset.pickScene }; pickScene(+ps.dataset.pickScene); return; }
   const sh = ev.target.closest('[data-show]');
-  if (sh) { sel = sh.dataset.show; render(); return; }
+  if (sh) { if (sel !== sh.dataset.show) noteSel = -1; sel = sh.dataset.show; render(); return; }
   const pb = ev.target.closest('.pbtn'); if (pb) { stopPlay(); cur = +pb.dataset.i; sel = null; selScene = null; focusSel = null; render(); return; }
   const pt = ev.target.closest('.pat'); if (pt) { sel = pt.dataset.k; focusSel = { kind: 'pattern', k: pt.dataset.k }; render(); if (playing && playing.kind === 'pat') { stopPlay(); playSelected(); } else drawRoll(); }
 });
 document.addEventListener('toggle', ev => { if (ev.target.matches && ev.target.matches('details.lib')) libOpen = ev.target.open; }, true);
 document.addEventListener('change', ev => {
+  if (ev.target.id === 'edVel' || ev.target.id === 'edLen' || ev.target.id === 'edBars') {
+    const x = rollPattern(DATA[cur]); if (!x) return;
+    if (ev.target.id === 'edBars') { const b = Math.max(1, Math.min(99, Math.round(+ev.target.value || 1))); commitNotes(x, x.ev, b); return; }
+    const ev2 = x.ev.map(e => [...e]), e = ev2[noteSel]; if (!e) return;
+    if (ev.target.id === 'edVel') e[3] = Math.max(1, Math.min(127, Math.round(+ev.target.value || 100)));
+    else e[2] = Math.max(1, Math.round(+ev.target.value || 1)) * 24;
+    commitNotes(x, ev2);
+    return;
+  }
   const sp = ev.target.closest('[data-scene-pat]');
   if (sp) {
     const p = DATA[cur], g = sp.dataset.scenePat, n = +sp.value;
@@ -624,6 +754,8 @@ document.addEventListener('drop', ev => {
 });
 document.addEventListener('keydown', ev => {
   if (!DATA.length || ev.target.closest('input,select')) return;
+  if ((ev.key === 'Delete' || ev.key === 'Backspace') && editMode && noteSel >= 0) { ev.preventDefault(); deleteSelectedNote(); return; }
+  if (ev.key === 'Escape' && editMode && noteSel >= 0) { noteSel = -1; drawRoll(); return; }
   if ((ev.key === 'Delete' || ev.key === 'Backspace') && focusSel) { ev.preventDefault(); stageDelete(focusSel, ev.shiftKey); return; }
   if (ev.key === 'Escape' && focusSel) { focusSel = null; render(); return; }
   if (/^[abcd]$/i.test(ev.key) && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {

@@ -316,6 +316,42 @@
     return buildTar(entries);
   }
 
+  // Build a pattern file: 4-byte header (0, bars, event count LE16) + 8-byte events sorted by position.
+  // Note event: pos LE16, pad*8, pitch, velocity, duration LE16, flag. Other events (e.g. fader moves,
+  // recognisable by a pad byte that is not a multiple of 8) are kept unchanged from the original file.
+  function buildPatternFile(orig, notes, bars) {
+    const other = [];
+    if (orig) for (let i = 4; i + 8 <= orig.length; i += 8) if (orig[i + 2] % 8) other.push(orig.slice(i, i + 8));
+    const chunks = [...other];
+    for (const [pad, pos, dur, vel, pitch, flag] of notes) {
+      const c = new Uint8Array(8);
+      c[0] = pos & 255; c[1] = (pos >> 8) & 255; c[2] = pad * 8; c[3] = pitch ?? 60;
+      c[4] = Math.max(1, Math.min(127, vel)); c[5] = dur & 255; c[6] = (dur >> 8) & 255; c[7] = flag ?? 0;
+      chunks.push(c);
+    }
+    chunks.sort((a, b) => ((a[0] | a[1] << 8) - (b[0] | b[1] << 8)));
+    const out = new Uint8Array(4 + chunks.length * 8);
+    out[0] = 0; out[1] = Math.max(1, Math.min(99, bars)); out[2] = chunks.length & 255; out[3] = (chunks.length >> 8) & 255;
+    chunks.forEach((c, i) => out.set(c, 4 + i * 8));
+    return out;
+  }
+
+  // Replace (or create) one pattern file in a project archive.
+  function setPatternFile(tarBuf, g, n, data) {
+    const entries = tarEntries(tarBuf);
+    const key = patKey(g, n);
+    const e = entries.find(x => x.name === key);
+    if (e) e.data = data;
+    else {
+      const tpl = entries.find(x => x.name.startsWith('patterns/') && x.data.length) || entries.find(x => x.name === 'scenes');
+      entries.push({ header: tpl.header, name: key, data });
+    }
+    const pats = entries.filter(x => x.name.startsWith('patterns/')).sort((a, b) => a.name.localeCompare(b.name));
+    const rest = entries.filter(x => !x.name.startsWith('patterns/'));
+    const idx = rest.findIndex(x => x.name === 'patterns');
+    return buildTar(idx >= 0 ? [...rest.slice(0, idx + 1), ...pats, ...rest.slice(idx + 1)] : [...rest, ...pats]);
+  }
+
   // Replace the song list (scene number per position, 1–99 positions) in a project archive.
   function setSong(tarBuf, positions) {
     const entries = tarEntries(tarBuf);
@@ -347,9 +383,9 @@
       const ev = [];
       for (let i = 4; i + 8 <= d.length; i += 8) {
         if (d[i + 2] % 8) continue;
-        ev.push([d[i + 2] / 8, d[i] | (d[i + 1] << 8), d[i + 5] | (d[i + 6] << 8), d[i + 4], d[i + 3]]);
+        ev.push([d[i + 2] / 8, d[i] | (d[i + 1] << 8), d[i + 5] | (d[i + 6] << 8), d[i + 4], d[i + 3], d[i + 7]]);
       }
-      pats.push({ g: m[1].toUpperCase(), n: Number(m[2]), bars: d[1], notes: ev.length, ev });
+      pats.push({ g: m[1].toUpperCase(), n: Number(m[2]), bars: d[1], notes: ev.length, ev, raw: d });
     }
     pats.sort((a, b) => a.g.localeCompare(b.g) || a.n - b.n);
     const scenes = [];
@@ -460,6 +496,6 @@
     }
   }
 
-  const api = { KO2, Player, untar, parseProject, pack7, unpack7, tarEntries, buildTar, movePattern, setSong, deletePatterns, deleteScenes, setScenePattern, PAD_LABELS, PAD_NOTE_OFFSET };
+  const api = { KO2, Player, untar, parseProject, pack7, unpack7, tarEntries, buildTar, movePattern, setSong, deletePatterns, deleteScenes, setScenePattern, PAD_LABELS, PAD_NOTE_OFFSET, buildPatternFile, setPatternFile };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KO2Lib = api;
 })(typeof window !== 'undefined' ? window : globalThis);
