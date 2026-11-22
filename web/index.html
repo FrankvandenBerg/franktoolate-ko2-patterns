@@ -115,7 +115,10 @@ td.dim{color:var(--muted)}
 .viewtabs button{font:inherit;font-weight:600;cursor:pointer;background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;color:var(--muted);margin-bottom:-1px}
 .viewtabs button[aria-pressed="true"]{color:var(--ink);border-bottom-color:var(--orange)}
 table.snd td{white-space:normal}
-table.snd td:nth-child(8){max-width:280px;color:var(--muted)}
+table.snd td:nth-child(7){max-width:280px;color:var(--muted)}
+table.snd tr.cat th{position:sticky;top:0;background:var(--panel);text-align:left;padding:14px 6px 6px;border-bottom:2px solid var(--orange);color:var(--ink);z-index:1}
+table.snd tr.cat .cat-name{font-family:var(--display);font-size:15px;font-weight:800;text-transform:capitalize;margin-right:12px}
+table.snd tr.cat .cat-meta{font-family:var(--mono);font-size:11px;color:var(--muted);font-weight:400}
 #pendingPop{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));width:min(380px,calc(100vw - 32px));z-index:50;
   background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.22),0 2px 6px rgba(0,0,0,.08);
   padding:14px 16px;display:flex;flex-direction:column;gap:10px;animation:ppIn .22s ease-out}
@@ -865,11 +868,19 @@ function renderSounds(){
   h += `<div class="edit"><label>Search <input id="sndQ" type="text" value="${soundsQuery.replace(/"/g, '&quot;')}" placeholder="name or slot" style="width:14em"></label>
     <label>Show <select id="sndF">${['all', 'used', 'unused', ...kinds].map(k => `<option value="${k}"${k === soundsFilter ? ' selected' : ''}>${k}</option>`).join('')}</select></label>
     <span class="stat">${list.length} shown · ▶ plays the sound on the K.O. II</span></div>`;
-  h += `<div class="tbl"><table class="snd"><thead><tr><th></th><th>slot</th><th>name</th><th>kind</th><th>length</th><th></th><th>mode</th><th>used on</th></tr></thead><tbody>` +
-    list.map(x => `<tr><td><button class="play" data-snd="${x.node}" aria-pressed="${playingSound === x.node}" ${dev ? '' : 'disabled'} title="Play on the K.O. II">${playingSound === x.node ? '■' : '▶'}</button></td>
-      <td class="mono">${String(x.slot).padStart(3, '0')}</td><td>${x.name ? x.name.replace(/</g, '&lt;') : '<span class="none">(no name)</span>'}</td><td>${soundKind(x.slot)}</td>
+  // group under a header per category, in slot order
+  const groups = [];
+  for (const x of list) { const k = soundKind(x.slot); let g = groups[groups.length - 1]; if (!g || g.kind !== k) groups.push(g = { kind: k, items: [] }); g.items.push(x); }
+  const merged = []; for (const g of groups) { const m = merged.find(z => z.kind === g.kind); if (m) m.items.push(...g.items); else merged.push(g); }
+  const row = x => `<tr><td><button class="play" data-snd="${x.node}" aria-pressed="${playingSound === x.node}" ${dev ? '' : 'disabled'} title="Play on the K.O. II">${playingSound === x.node ? '■' : '▶'}</button></td>
+      <td class="mono">${String(x.slot).padStart(3, '0')}</td><td>${x.name ? x.name.replace(/</g, '&lt;') : '<span class="none">(no name)</span>'}</td>
       <td class="mono">${x.seconds.toFixed(2)} s</td><td class="mono">${x.channels === 2 ? 'stereo' : 'mono'}</td><td class="mono">${x.mode}</td>
-      <td class="mono">${(use[x.slot] || []).join(', ')}</td></tr>`).join('') + `</tbody></table></div>`;
+      <td class="mono">${(use[x.slot] || []).join(', ')}</td></tr>`;
+  h += `<div class="tbl"><table class="snd"><thead><tr><th></th><th>slot</th><th>name</th><th>length</th><th></th><th>mode</th><th>used on</th></tr></thead>` +
+    merged.map(g => {
+      const used = g.items.filter(x => use[x.slot]).length, secs = g.items.reduce((a, x) => a + x.seconds, 0);
+      return `<tbody><tr class="cat"><th colspan="7"><span class="cat-name">${g.kind}</span><span class="cat-meta">${g.items.length} sound${g.items.length === 1 ? '' : 's'} · ${used} used · ${Math.round(secs)} s · slots ${String(g.items[0].slot).padStart(3, '0')}–${String(g.items[g.items.length - 1].slot).padStart(3, '0')}</span></th></tr>` + g.items.map(row).join('') + `</tbody>`;
+    }).join('') + `</table></div>`;
   card.innerHTML = h;
 }
 async function toggleSound(node){
