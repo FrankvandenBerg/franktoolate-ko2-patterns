@@ -167,6 +167,10 @@
       await this.req(CMD_FILE, [7, 1, node >> 8, node & 255, ...json, 0], 30000);
     }
 
+    // Audition a sound on the device itself (as TE's sample tool does): [5, start=1|stop=2, node, offset, length]
+    async playSound(node) { await this.req(CMD_FILE, [5, 1, node >> 8, node & 255, 0, 0, 0, 0, 0, 0, 0, 0]); }
+    async stopSound(node) { await this.req(CMD_FILE, [5, 2, node >> 8, node & 255, 0, 0, 0, 0, 0, 0, 0, 0]); }
+
     async metadata(node) {
       let s = '';
       for (let page = 0; ; page++) {

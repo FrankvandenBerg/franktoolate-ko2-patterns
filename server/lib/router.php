@@ -45,6 +45,42 @@ if (passkey_count((int)$u['id']) === 0) redirect('passkey');
 
 $tools = tools_for($u);
 
+// Small JSON API for the tools (signed-in users only)
+if ($route === 'api/sounds') {
+    $device = substr(preg_replace('~[^A-Za-z0-9_-]~', '', (string)($_GET['device'] ?? '')), 0, 64);
+    if ($device === '') json_out(['error' => 'Missing device.'], 400);
+    if ($method === 'GET') {
+        $st = db()->prepare('SELECT data, updated_at FROM ko_sound_cache WHERE user_id = ? AND device = ?');
+        $st->execute([$u['id'], $device]);
+        $r = $st->fetch();
+        json_out($r ? ['sounds' => json_decode($r['data'], true), 'updated' => $r['updated_at']] : ['sounds' => null]);
+    }
+    if ($method === 'POST') {
+        check_csrf();
+        $raw = (string)file_get_contents('php://input');
+        if (strlen($raw) > 2_000_000) json_out(['error' => 'Too large.'], 413);
+        $in = json_decode($raw, true);
+        if (!is_array($in) || !is_array($in['sounds'] ?? null)) json_out(['error' => 'Bad data.'], 400);
+        $clean = [];
+        foreach (array_slice($in['sounds'], 0, 2000) as $s) {
+            if (!is_array($s)) continue;
+            $clean[] = [
+                'slot' => (int)($s['slot'] ?? 0), 'node' => (int)($s['node'] ?? 0), 'size' => (int)($s['size'] ?? 0),
+                'name' => mb_substr((string)($s['name'] ?? ''), 0, 120), 'seconds' => round((float)($s['seconds'] ?? 0), 2),
+                'channels' => (int)($s['channels'] ?? 1), 'mode' => mb_substr((string)($s['mode'] ?? ''), 0, 20),
+            ];
+        }
+        $json = json_encode($clean);
+        $isMysql = db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
+        $sql = $isMysql
+            ? 'INSERT INTO ko_sound_cache (user_id, device, data, updated_at) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data), updated_at = VALUES(updated_at)'
+            : 'INSERT OR REPLACE INTO ko_sound_cache (user_id, device, data, updated_at) VALUES (?, ?, ?, ?)';
+        db()->prepare($sql)->execute([$u['id'], $device, $json, now()]);
+        json_out(['ok' => true, 'count' => count($clean)]);
+    }
+    json_out(['error' => 'Use GET or POST.'], 405);
+}
+
 if ($route === '') {
     // Launcher: go straight to the only tool, otherwise list them.
     $live = array_values(array_filter($tools, fn($t) => $t['status'] === 'live'));
@@ -98,6 +134,7 @@ function serve_tool(array $u, array $tool, string $file): void {
         . '<button style="font:inherit;background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;padding:0">Sign out</button></form></div>';
     $html = file_get_contents($full);
     $html = str_replace('<div class="wrap">', '<div class="wrap">' . $bar, $html);
+    $html = str_replace('</head>', '<meta name="csrf" content="' . h(csrf_token()) . '"><meta name="ko-base" content="' . h(base_path()) . '"></head>', $html);
     header('Content-Type: text/html; charset=utf-8');
     echo $html;
 }

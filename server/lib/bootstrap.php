@@ -100,6 +100,15 @@ function migrate(PDO $pdo): void {
         granted_at DATETIME NOT NULL,
         PRIMARY KEY (user_id, tool_id)
     )");
+    // Per user and device: cached list of the sounds on the K.O. II, so it does not have to be read over MIDI every time
+    $text = $isMysql ? 'MEDIUMTEXT' : 'TEXT';
+    $pdo->exec("CREATE TABLE IF NOT EXISTS ko_sound_cache (
+        user_id INT NOT NULL,
+        device VARCHAR(64) NOT NULL,
+        data $text NOT NULL,
+        updated_at DATETIME NOT NULL,
+        PRIMARY KEY (user_id, device)
+    )");
     if ((int)$pdo->query('SELECT COUNT(*) FROM ko_tools')->fetchColumn() === 0) {
         $pdo->prepare('INSERT INTO ko_tools (slug, name, description, access, status, sort, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
             ->execute(['ko2', 'K.O. II Patterns', 'Browse, play and rearrange the patterns on your EP-133 K.O. II.', 'everyone', 'live', 10, gmdate('Y-m-d H:i:s')]);

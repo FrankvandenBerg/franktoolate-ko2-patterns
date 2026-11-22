@@ -10,3 +10,6 @@ config.local.php
 
 # Local deploy settings
 .deploy.env
+
+# Personal lists read from the device
+lists/
