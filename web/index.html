@@ -99,6 +99,18 @@ td.dim{color:var(--muted)}
 .rollgrid.editing .note::after{content:"";position:absolute;right:0;top:0;bottom:0;width:6px;cursor:ew-resize}
 .note.picked{outline:2px solid var(--ink);outline-offset:1px;z-index:2}
 .lab.nosample{opacity:.55}
+.cycle{border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--panel);display:flex;flex-direction:column;gap:6px;overflow-x:auto}
+.cy-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}
+.cy-grid{position:relative;display:grid;grid-template-columns:130px 1fr;row-gap:4px;min-width:480px}
+.cy-lab{font-family:var(--mono);font-size:11px;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.cy-lab .gl{width:18px;height:18px;font-size:10px}
+.cy-lab em{font-style:normal;color:var(--muted)}
+.cy-ruler{position:relative;height:16px;font-family:var(--mono);font-size:10px;color:var(--muted);border-bottom:1px solid var(--line)}
+.cy-ruler span{position:absolute;top:1px;transform:translateX(3px)}
+.cy-track{position:relative;height:22px;background-image:repeating-linear-gradient(90deg,var(--line) 0 1px,transparent 1px calc(100% / var(--bars)));border-radius:4px}
+.cy-block{position:absolute;top:2px;bottom:2px;border-radius:4px;background:color-mix(in srgb,var(--gc) 30%,transparent);border:1px solid var(--gc);font-family:var(--mono);font-size:10px;color:var(--ink);display:flex;align-items:center;padding-left:4px;overflow:hidden}
+.cy-head-line{position:absolute;top:0;bottom:0;width:2px;background:var(--ink);pointer-events:none;left:calc(130px + (100% - 130px) * var(--cy,0))}
+.cycle .cy-head-line{display:block}
 .focus{outline:2px solid var(--orange)!important;outline-offset:2px}
 .chan[data-chan]{cursor:pointer}
 .hint{font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:6px;padding:8px 10px}
@@ -320,6 +332,7 @@ function sceneHtml(p, n){
     <button class="play" data-play="scene" data-scene="${n}" aria-pressed="${on}" ${player ? '' : 'disabled'} title="${player ? 'Play this scene on the K.O. II' : 'Connect the K.O. II first'}">${on ? '■ stop' : '▶ play scene'}</button>
     <button class="play del" data-del="scene" data-from="${n}" data-to="${n}" title="Clear this scene; its patterns stay">✕ clear scene</button>
     <button class="play del" data-del="scene-patterns" data-from="${n}" data-to="${n}" title="Clear this scene and delete the patterns no other scene uses">✕ clear + patterns</button></div>
+    ${cycleHtml(p, n)}
     <div class="chans">`;
   'ABCD'.split('').forEach((g, gi) => {
     const pn = sc[gi + 1], pat = pn ? p.pats.find(q => q.g === g && q.n === pn) : null;
@@ -344,6 +357,50 @@ function sceneHtml(p, n){
   return h;
 }
 
+// How the patterns of a scene run against each other: each one loops on its own length,
+// so a 3-bar and a 4-bar pattern only line up again after 12 bars.
+function sceneCycle(p, n){
+  const gcd = (a, b) => b ? gcd(b, a % b) : a;
+  const parts = 'ABCD'.split('').map(g => ({ g, x: patFor(p, g) })).map(o => ({ ...o, bars: o.x && o.x.notes ? Math.max(1, o.x.bars) : 0 }));
+  const lens = parts.filter(o => o.bars).map(o => o.bars);
+  let L = lens.reduce((a, b) => a * b / gcd(a, b), 1);
+  if (L > 64) L = Math.max(1, ...lens);
+  return { parts, L };
+}
+function cycleHtml(p, n){
+  const { parts, L } = sceneCycle(p, n);
+  if (!parts.some(o => o.bars)) return '';
+  const lens = [...new Set(parts.filter(o => o.bars).map(o => o.bars))];
+  let h = `<div class="cycle" id="cycle" data-bars="${L}"><div class="cy-head"><span class="stat">${lens.length > 1 ? `Patterns of different lengths: they line up again every <b>${L}</b> bars` : `All patterns are <b>${lens[0]}</b> bar${lens[0] === 1 ? '' : 's'}`}</span><span class="stat cy-pos" id="cyPos"></span></div>
+    <div class="cy-grid" style="--bars:${L}"><div class="cy-lab"></div><div class="cy-ruler">`;
+  const every = L <= 16 ? 1 : L <= 32 ? 2 : 4;
+  for (let b = 0; b < L; b += every) h += `<span style="left:${b / L * 100}%">${b + 1}</span>`;
+  h += `</div>`;
+  for (const o of parts) {
+    h += `<div class="cy-lab"><span class="gl" style="background:${GC[o.g]}">${o.g}</span> ${o.bars ? `${label(o.x)} · ${o.bars}b` : '<em>silent</em>'}</div><div class="cy-track">`;
+    if (o.bars) for (let r = 0; r * o.bars < L; r++) {
+      const w = Math.min(o.bars, L - r * o.bars);
+      h += `<div class="cy-block" style="left:${r * o.bars / L * 100}%;width:${w / L * 100}%;--gc:${GC[o.g]}">${w === o.bars ? '×' + (r + 1) : ''}</div>`;
+    }
+    h += `</div>`;
+  }
+  return h + `<div class="cy-head-line" hidden></div></div></div>`;
+}
+// Position the cycle line and the per-roll counters for scene time t (96-ppqn ticks).
+function updateCycle(t){
+  const c = document.getElementById('cycle');
+  if (c) {
+    const L = +c.dataset.bars * TPB, line = c.querySelector('.cy-head-line'), pos = document.getElementById('cyPos');
+    if (t == null) { line.hidden = true; if (pos) pos.textContent = ''; }
+    else { const tt = t % L; line.hidden = false; c.style.setProperty('--cy', tt / L); if (pos) pos.textContent = `bar ${Math.floor(tt / TPB) + 1} of ${c.dataset.bars}`; }
+  }
+  document.querySelectorAll('.roll[data-g]').forEach(el => {
+    const out = el.querySelector('.counter'); if (!out) return;
+    const x = patFor(DATA[cur], el.dataset.g); if (!x || t == null) { out.textContent = ''; return; }
+    const len = Math.max(1, x.bars) * TPB;
+    out.textContent = `bar ${Math.floor((t % len) / TPB) + 1}/${x.bars} · round ${Math.floor(t / len) % 99 + 1}`;
+  });
+}
 function groupAudible(g){ return soloGroup ? soloGroup === g : mixer[g]; }
 function applyMixer(){ if (player) for (const g of 'ABCD') player.setMuted(g, !groupAudible(g)); render(); }
 function sceneParts(p, sceneNo){
@@ -402,6 +459,7 @@ function drawRoll(g){
   let h = `<div class="rollhead"><strong>${label(x)}</strong>
     <span class="stat"><b>${x.bars}</b> ${x.bars===1?'bar':'bars'}</span><span class="stat"><b>${x.notes}</b> notes</span>
     <button class="play" data-play="pat" data-k="${k}" aria-pressed="${isPlaying('pat', cur+':'+k)}" ${player && x.notes ? '' : 'disabled'} title="${player ? 'Play only this pattern' : 'Connect the K.O. II first'}">${isPlaying('pat', cur+':'+k) ? '■ stop' : '▶ play'}</button>
+    <span class="stat counter"></span>
     <span class="pill live followBadge" ${follow.running ? '' : 'hidden'}>● K.O. II playing</span>
     <button class="play" data-edit="${g}" aria-pressed="${editing}">${editing ? '✓ done editing' : '✎ edit notes'}</button>
     ${x.virtual ? '' : `<button class="play del" data-del="pattern" data-k="${k}" title="Delete this pattern (staged until you write)">✕ delete pattern</button>`}</div>`;
@@ -743,6 +801,7 @@ function scheduleFollowFrame(){ if (!follow.raf) follow.raf = requestAnimationFr
 function showFollow(){
   document.querySelectorAll('.followBadge').forEach(b => b.hidden = !follow.running);
   if (!follow.running) {
+    if (!playing) updateCycle(null);
     document.querySelectorAll('.note.hit').forEach(n => n.classList.remove('hit'));
     if (!playing) document.querySelectorAll('.playhead').forEach(ph => ph.hidden = true);
   }
@@ -751,6 +810,7 @@ function showFollow(){
 function drawFollow(){
   if (!follow.running || playing) return;
   const p = DATA[cur]; if (!p) return;
+  updateCycle(follow.clocks * 4);
   document.querySelectorAll('.roll[data-g]').forEach(el => {
     const x = patFor(p, el.dataset.g), g = el.querySelector('.rollgrid'), ph = el.querySelector('.playhead');
     if (!x || !g || !ph) return;
@@ -771,6 +831,7 @@ function updatePlayheads(f, seg){
     ph.hidden = t == null;
     if (t != null) g.style.setProperty('--ph', (t % +g.dataset.len) / +g.dataset.len);
   });
+  updateCycle(playing && playing.kind === 'scene' ? t : null);
 }
 function isPlaying(kind, key){ return !!playing && playing.kind === kind && playing.key === key; }
 function showHead(){ return playing && playing.kind === 'pat' && playing.key === cur + ':' + sel; }
