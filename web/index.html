@@ -406,7 +406,7 @@ function drawRoll(){
       ${n ? `<span>Selected note: pad ${KO2Lib.PAD_LABELS[n[0]]}, step ${Math.floor(n[1] / 24) + 1}</span>
         <label>Velocity <input id="edVel" type="number" min="1" max="127" value="${n[3]}" style="width:4.5em"></label>
         <label>Length (steps) <input id="edLen" type="number" min="1" max="${bars * 16}" value="${Math.max(1, Math.round(n[2] / 24))}" style="width:4.5em"></label>
-        <button class="play del" id="edDel">✕ delete note</button>` : `<span class="stat">Click an empty spot to add a note. Drag a note to move it (also to another pad), drag its right edge to change its length. Select a note and press Delete to remove it. Hold Alt while dragging to leave the 1/16 grid.</span>`}
+        <button class="play del" id="edDel">✕ delete note</button>` : `<span class="stat">Click an empty spot to add a note, or press and drag to the right to draw a longer one. Drag a note to move it (also to another pad), drag its right edge to change its length. Select a note and press Delete to remove it. Hold Alt while dragging to leave the 1/16 grid.</span>`}
     </div>`;
   } else if (!x.notes) { el.innerHTML = h + `<p class="none">This pattern has no notes yet. Click "edit notes" to add some.</p>`; return; }
   h += `<div class="rollscroll"><div class="rollgrid${editMode ? ' editing' : ''}" style="--gc:${GC[x.g]}"><div class="playhead" hidden></div><div class="lab" style="height:18px"></div><div class="ruler">`;
@@ -460,17 +460,21 @@ document.addEventListener('pointerdown', ev => {
   if (noteEl) {
     noteSel = +noteEl.dataset.ni;
     const e = x.ev[noteSel], r = noteEl.getBoundingClientRect();
-    drag = { mode: ev.clientX > r.right - 7 ? 'resize' : 'move', x, startX: ev.clientX, startTick: e[1], startDur: e[2], pad: e[0], el: noteEl, len, rect, moved: false };
+    // right edge resizes; on short notes the right 40% does, so it stays grabbable
+    const edge = Math.max(4, Math.min(8, r.width * 0.4));
+    drag = { mode: ev.clientX > r.right - edge ? 'resize' : 'move', x, startX: ev.clientX, startTick: e[1], startDur: e[2], pad: e[0], el: noteEl, len, rect, moved: false };
     noteEl.setPointerCapture(ev.pointerId);
     drawEditPanelOnly();
   } else {
+    // Draw a new note: press on an empty spot and drag to the right for a longer note.
     const pad = +lane.dataset.pad, t = snap(tickAt(ev.clientX), ev.altKey);
-    const ev2 = [...x.ev, [pad, t, 24, 100, pitchFor(x, pad), 0]];
-    noteSel = ev2.length - 1;
-    const sortedIdx = sortedIndexAfterBuild(ev2, noteSel);
-    commitNotes(x, ev2);
-    noteSel = sortedIdx;
-    drawRoll();
+    const el = document.createElement('div');
+    el.className = 'note picked';
+    el.style.left = (t / len * 100) + '%';
+    el.style.width = (24 / len * 100) + '%';
+    lane.appendChild(el);
+    lane.setPointerCapture(ev.pointerId);
+    drag = { mode: 'draw', x, pad, startTick: t, startX: ev.clientX, dur: 24, el, len, rect, moved: true };
   }
 });
 document.addEventListener('pointermove', ev => {
@@ -485,6 +489,11 @@ document.addEventListener('pointermove', ev => {
     const under = document.elementFromPoint(ev.clientX, ev.clientY);
     const lane = under && under.closest && under.closest('.rollgrid.editing .lane');
     if (lane && +lane.dataset.pad !== drag.pad) { drag.newPad = +lane.dataset.pad; drag.moved = true; lane.appendChild(drag.el); }
+  } else if (drag.mode === 'draw') {
+    const end = Math.max(0, Math.min(len, (ev.clientX - rect.left) / rect.width * len));
+    let d = end - drag.startTick; d = ev.altKey ? Math.round(d) : Math.ceil(d / 24) * 24;
+    drag.dur = Math.max(ev.altKey ? 1 : 24, Math.min(len - drag.startTick, d));
+    drag.el.style.width = (drag.dur / len * 100) + '%';
   } else {
     let d = drag.startDur + dt; d = ev.altKey ? Math.round(d) : Math.round(d / 24) * 24;
     drag.dur = Math.max(ev.altKey ? 1 : 24, Math.min(len - drag.startTick, d));
@@ -494,6 +503,13 @@ document.addEventListener('pointermove', ev => {
 document.addEventListener('pointerup', () => {
   if (!drag) return;
   const d = drag; drag = null;
+  if (d.mode === 'draw') {
+    const ev2 = [...d.x.ev, [d.pad, d.startTick, d.dur, 100, pitchFor(d.x, d.pad), 0]];
+    const idx = sortedIndexAfterBuild(ev2, ev2.length - 1);
+    commitNotes(d.x, ev2);
+    noteSel = idx; drawRoll();
+    return;
+  }
   if (!d.moved) return;
   const ev2 = d.x.ev.map(e => [...e]);
   const e = ev2[noteSel];
