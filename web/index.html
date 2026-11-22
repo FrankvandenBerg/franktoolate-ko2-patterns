@@ -170,6 +170,14 @@ a.play{text-decoration:none;display:inline-block}
 .um-mail{font:11px var(--mono);color:var(--muted);padding:6px 10px}
 .linkbtn{font-size:12px;color:var(--muted);text-decoration:underline;cursor:pointer;margin-left:auto}
 @media (max-width:720px){.appbar-in{gap:10px}.mainnav{order:3;flex-basis:100%}.conn{margin-left:auto}}
+.sect{border-radius:14px;padding:14px 16px 16px;display:flex;flex-direction:column;gap:12px;border:1px solid var(--line)}
+.sect-song{background:color-mix(in srgb,var(--b) 7%,var(--panel));border-color:color-mix(in srgb,var(--b) 35%,var(--line))}
+.sect-scenes{background:color-mix(in srgb,var(--orange) 5%,var(--panel));border-color:color-mix(in srgb,var(--orange) 30%,var(--line))}
+.sect-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.sect-tag{font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:-.01em}
+.sect-song .sect-tag{color:var(--b)}
+.sect-scenes .sect-tag{color:var(--orange)}
+.sect-sub{font-size:12px;color:var(--muted)}
 .subtabs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .subtabs button{font:inherit;cursor:pointer;text-align:left;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;gap:2px}
 .subtabs button b{font-size:16px;font-weight:800}
@@ -360,26 +368,22 @@ function render(){
     ${KO_BASE !== null ? '<button class="play" id="openBackups" title="Backups stored on the server">backups</button>' : ''}
     ${dev && p.node && channelPlan(p).assign.length ? `<button class="play" id="assignCh" title="Melody pads need their own MIDI channel for the tool to play their pitches">give ${channelPlan(p).assign.length} melody pad${channelPlan(p).assign.length === 1 ? '' : 's'} a MIDI channel…</button>` : ''}</div>`;
   drawPending(p);
-  // Two clearly separate parts of a project: the scenes (what plays together) and the song (the order of scenes).
-  h += `<div class="subtabs" role="tablist">
-    <button role="tab" data-pview="scenes" aria-selected="${projView === 'scenes'}"><b>Scenes</b><small>${p.scenes.length} scene${p.scenes.length === 1 ? '' : 's'} · what plays together</small></button>
-    <button role="tab" data-pview="song" aria-selected="${projView === 'song'}"><b>Song</b><small>${p.song.length ? p.song.length + ' position' + (p.song.length === 1 ? '' : 's') : 'no song'} · the order of scenes</small></button>
-  </div>`;
-  if (projView === 'song') {
-    h += `<section class="songview">${songTimeline(p)}${songHtml(p)}</section>`;
-  } else if (!p.scenes.length) {
-    h += `<h3>Scenes</h3><p class="none">This project has no scenes yet.</p>`;
+  // Two clearly separate sections: the song (the order of scenes) and the scenes (what plays together).
+  h += `<section class="sect sect-song"><div class="sect-head"><span class="sect-tag">Song</span><span class="sect-sub">${p.song.length ? p.song.length + ' position' + (p.song.length === 1 ? '' : 's') : 'no song'} · the order in which scenes play</span></div>${songTimeline(p)}${songHtml(p)}</section>`;
+  h += `<section class="sect sect-scenes"><div class="sect-head"><span class="sect-tag">Scenes</span><span class="sect-sub">${p.scenes.length} scene${p.scenes.length === 1 ? '' : 's'} · each scene plays one pattern per group A–D</span></div>`;
+  if (!p.scenes.length) {
+    h += `<p class="none">This project has no scenes yet.</p>`;
   } else {
     const fdesc = !focusSel ? '' : focusSel.kind === 'scene' ? `scene ${pad2(focusSel.n)}` : (() => { const x = p.pats.find(q => q.g + q.n === focusSel.k); return x ? `pattern ${label(x)}` : ''; })();
     h += `<div class="hint" role="status">${fdesc ? `Selected: <b>${fdesc}</b>. Press <kbd>Delete</kbd> to remove it${focusSel.kind === 'scene' ? ' (<kbd>Shift</kbd>+<kbd>Delete</kbd> also deletes the patterns only this scene uses)' : ''}, <kbd>Esc</kbd> to deselect.` : 'Click a scene or a pattern to select it, then press <kbd>Delete</kbd> to remove it.'}</div>`;
-    h += `<div class="ph"><h3>Scenes</h3>${dev ? `<label class="check" style="font-size:12px;color:var(--muted)"><input type="checkbox" id="followScenes" ${follow.followScenes ? 'checked' : ''}> follow the scene playing on the K.O. II</label>` : ''}</div><div class="scenes">` + p.scenes.map(sc => {
+    h += `<div class="ph">${dev ? `<label class="check" style="font-size:12px;color:var(--muted)"><input type="checkbox" id="followScenes" ${follow.followScenes ? 'checked' : ''}> follow the scene playing on the K.O. II</label>` : ''}</div><div class="scenes">` + p.scenes.map(sc => {
       const n = sc[0], parts = sceneParts(p, n), bars = Math.max(1, ...parts.map(q => q.bars || 1)), notes = parts.reduce((a, q) => a + q.notes, 0);
       const inSong = p.song.includes(n);
       return `<button class="scn${focusSel && focusSel.kind === 'scene' && focusSel.n === n ? ' focus' : ''}" data-pick-scene="${n}" aria-pressed="${n === selScene}"><b>${pad2(n)}</b><small>${bars}b · ${notes}n${inSong ? ' · song' : ''}</small></button>`;
     }).join('') + `</div>`;
     h += sceneHtml(p, selScene);
   }
-  if (projView === 'scenes') {
+  {
   const unused = p.pats.filter(q => !p.scenes.some(sc => sc['ABCD'.indexOf(q.g) + 1] === q.n));
   h += `<details class="lib"${libOpen ? ' open' : ''}><summary>All patterns (${p.pats.length})${unused.length ? ` · ${unused.length} not in any scene` : ''}</summary><div class="groups">`;
   for (const g of ['A','B','C','D']) {
@@ -402,6 +406,7 @@ function render(){
   }
   h += `</details>`;
   }
+  h += `</section>`;
   card.innerHTML = h;
   drawRolls();
 }
@@ -529,12 +534,12 @@ function songTimeline(p){
 }
 function songHtml(p){
   const editable = !!p.songEditable;
-  if (!p.song || !p.song.length) return `<h3>Song</h3><p class="none">${editable ? 'No song arranged in this project.' : 'This project has no song data (it may come from an older OS). Make a song on the K.O. II first.'}</p>`;
+  if (!p.song || !p.song.length) return `<p class="none">${editable ? 'No song arranged in this project.' : 'This project has no song data (it may come from an older OS). Make a song on the K.O. II first.'}</p>`;
   const bars = p.song.map(n => Math.max(1, ...sceneParts(p, n).map(q => q.bars || 1)));
   const total = bars.reduce((a, b) => a + b, 0);
   const on = isPlaying('song', String(cur));
   const sceneNos = [...new Set([...p.scenes.map(sc => sc[0]), ...p.song])].sort((a, b) => a - b);
-  let h = `<h3>Song</h3><div class="ph"><span class="stat"><b>${p.song.length}</b> position${p.song.length === 1 ? '' : 's'}</span><span class="stat"><b>${total}</b> bars</span>
+  let h = `<div class="ph"><span class="stat"><b>${p.song.length}</b> position${p.song.length === 1 ? '' : 's'}</span><span class="stat"><b>${total}</b> bars</span>
     <button class="play" data-play="song" aria-pressed="${on}" ${player ? '' : 'disabled'} title="${player ? 'Play the song on the K.O. II' : 'Connect the K.O. II first'}">${on ? '■ stop' : '▶ play song'}</button></div><div class="song">`;
   h += p.song.map((n, i) => `<span class="pos"><span class="k">${i + 1}</span>` + (editable
       ? `<select data-song-scene="${i}" aria-label="Scene at position ${i + 1}">${sceneNos.map(x => `<option value="${x}"${x === n ? ' selected' : ''}>scene ${String(x).padStart(2, '0')}</option>`).join('')}</select>`
@@ -1211,7 +1216,7 @@ document.addEventListener('click', ev => {
     return;
   }
   const pv = ev.target.closest('[data-pview]'); if (pv) { projView = pv.dataset.pview; render(); return; }
-  const gs = ev.target.closest('[data-goto-scene]'); if (gs) { projView = 'scenes'; selScene = +gs.dataset.gotoScene; sel = null; render(); return; }
+  const gs = ev.target.closest('[data-goto-scene]'); if (gs) { selScene = +gs.dataset.gotoScene; sel = null; render(); const t = document.querySelector('.sect-scenes'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   const ps = ev.target.closest('[data-pick-scene]');
   if (ps) { focusSel = { kind: 'scene', n: +ps.dataset.pickScene }; pickScene(+ps.dataset.pickScene); return; }
   const pb = ev.target.closest('.pbtn'); if (pb) { stopPlay(); cur = +pb.dataset.i; sel = null; selScene = null; focusSel = null; render(); return; }
