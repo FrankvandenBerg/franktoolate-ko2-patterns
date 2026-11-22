@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>K.O. II Patterns</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#e9e9e6; --panel:#f6f6f3; --ink:#1c1d1f; --muted:#6b6d70; --line:#cfd0cc;
+  --orange:#ff5a1f; --a:#ff5a1f; --b:#2f6fe0; --c:#1d9a6c; --d:#8a55d6;
+  --display:"Archivo",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#141517; --panel:#1d1f22; --ink:#ececea; --muted:#9a9c9f; --line:#33363a;
+  --orange:#ff6a33; --a:#ff6a33; --b:#5b8ff0; --c:#3bbf8e; --d:#a87ff0; color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--display);font-size:14px;padding:24px 16px 48px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:12px}
+h1{font-size:clamp(28px,5vw,44px);font-weight:800;letter-spacing:-.02em;margin:0}
+h1 span{color:var(--orange)}
+.meta{font-family:var(--mono);font-size:12px;color:var(--muted);line-height:1.6;text-align:right}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.btn{font:inherit;font-weight:600;cursor:pointer;border-radius:6px;padding:10px 16px;border:1px solid var(--ink);background:var(--ink);color:var(--bg)}
+.btn.sec{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn:focus-visible,.pbtn:focus-visible,.pat:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+.status{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.status.err{color:#d23}
+.prog{height:4px;background:var(--line);border-radius:2px;overflow:hidden;flex-basis:100%}
+.prog i{display:block;height:100%;width:0;background:var(--orange);transition:width .15s}
+.intro{max-width:65ch;color:var(--muted);line-height:1.55;margin:0}
+.projects{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:6px}
+.pbtn{font:inherit;cursor:pointer;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:10px 4px 8px;display:flex;flex-direction:column;align-items:center;gap:2px}
+.pbtn b{font-family:var(--mono);font-size:18px;font-weight:500}
+.pbtn small{font-family:var(--mono);font-size:10px;color:var(--muted)}
+.pbtn[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.pbtn[aria-pressed="true"] small{color:var(--bg);opacity:.7}
+@media (max-width:560px){.projects{grid-template-columns:repeat(5,minmax(0,1fr))}}
+section.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.ph{display:flex;flex-wrap:wrap;gap:8px 22px;align-items:baseline}
+.ph h2{margin:0;font-size:24px;font-weight:800}
+.stat{font-family:var(--mono);font-size:13px;color:var(--muted)} .stat b{color:var(--ink);font-weight:500}
+h3{margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.groups{display:flex;flex-direction:column;gap:10px}
+.grow{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:start}
+.gl{font-family:var(--mono);font-weight:500;font-size:15px;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff}
+.pats{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.pat{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:5px;padding:5px 8px;font-family:var(--mono);font-size:12px;display:flex;gap:6px;align-items:baseline;font-variant-numeric:tabular-nums}
+.pat .n{font-weight:500;font-size:13px}
+.pat .i{color:var(--muted);font-size:11px}
+.pat.empty{opacity:.45}
+.pat[aria-pressed="true"]{border-color:var(--gc);box-shadow:inset 0 0 0 1px var(--gc)}
+.none{font-family:var(--mono);font-size:12px;color:var(--muted);margin:0}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+th,td{padding:4px 12px 4px 0;text-align:left;white-space:nowrap}
+th{color:var(--muted);font-weight:400;border-bottom:1px solid var(--line)}
+td.dim{color:var(--muted)}
+.roll{display:flex;flex-direction:column;gap:8px;min-width:0}
+.rollhead{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline}
+.rollhead strong{font-size:18px}
+.rollscroll{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+.rollgrid{display:grid;grid-template-columns:160px 1fr;min-width:560px}
+.lab{font-family:var(--mono);font-size:11px;padding:0 8px;height:22px;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--panel)}
+.lab em{font-style:normal;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.lane{position:relative;height:22px;border-bottom:1px solid var(--line)}
+.note{position:absolute;top:4px;height:14px;border-radius:2px;background:var(--gc);min-width:3px}
+.ruler{position:relative;height:18px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10px;color:var(--muted)}
+.ruler span{position:absolute;top:3px;transform:translateX(3px)}
+.play{font:inherit;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:5px;padding:4px 10px;display:inline-flex;gap:6px;align-items:center}
+.play:disabled{opacity:.4;cursor:default}
+.play[aria-pressed="true"]{background:var(--orange);border-color:var(--orange);color:#fff}
+.play:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+.lanes{position:relative;display:contents}
+.rollgrid{position:relative}
+.playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--ink);opacity:.7;pointer-events:none;left:calc(160px + (100% - 160px) * var(--ph,0))}
+.pat[draggable="true"]{cursor:grab}
+.pat.drop,.grow.drop{outline:2px dashed var(--orange);outline-offset:2px}
+.edit{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:var(--mono);font-size:12px}
+.edit select,.edit input{font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)}
+.edit input{width:4.5em}
+.pending{border:1px solid var(--orange);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.pending ul{margin:0;padding-left:18px;font-family:var(--mono);font-size:12px;line-height:1.6}
+.pending .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn.small{padding:6px 12px;font-size:13px}
+.foot{font-size:12px;color:var(--muted);line-height:1.55;max-width:75ch;margin:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>K.O. II <span>patterns</span></h1>
+    <div class="meta" id="meta">not connected</div>
+  </header>
+
+  <div class="bar">
+    <button class="btn" id="connect">Connect K.O. II</button>
+    <label class="btn sec" for="tarfiles">Open backup (.tar)</label>
+    <input type="file" id="tarfiles" accept=".tar" multiple hidden>
+    <span class="status" id="status">Connect the K.O. II over USB and click Connect. Chrome will ask for MIDI permission.</span>
+    <div class="prog" id="prog" hidden><i></i></div>
+  </div>
+
+  <p class="intro" id="intro">Reading is read-only: the projects are requested over MIDI and nothing on the sampler changes until you choose to write.</p>
+  <nav class="projects" id="projects" aria-label="Projects" hidden></nav>
+  <section class="card" id="project" hidden></section>
+  <p class="foot">Patterns are numbered 01–99 per group (A–D), as in the Teenage Engineering guide. "b" is the pattern length in bars (1 bar = 384 ticks at 96 ppqn), "n" the number of notes. Pad numbers 1–12 are the internal order, not the labels printed on the pads. Left/right arrows switch pattern, keys 1–9 switch project, space plays or stops. Moving: drag a pattern onto another pattern to swap them, or onto a group to move it there; within a group, scenes follow along. Playback sends MIDI notes to the sampler (group A = notes 36–47, B = 48–59, C = 60–71, D = 72–83); do not leave the K.O. II in record mode, or the notes will be recorded. Pads in keys mode play at their root note.</p>
+</div>
+
+<script src="ko2lib.js"></script>
+<script>
+const { KO2, Player, untar, parseProject, movePattern } = window.KO2Lib;
+const GC = { A:'var(--a)', B:'var(--b)', C:'var(--c)', D:'var(--d)' };
+const TPB = 384;
+const $ = s => document.querySelector(s);
+let projDirNode = 2000, DATA = [], soundNames = {}, cur = 0, sel = null, dev = null, player = null, playing = null; // playing: {kind:'pat'|'scene', key}
+
+function status(t, err){ const s=$('#status'); s.textContent=t; s.classList.toggle('err', !!err); }
+function progress(f){ const p=$('#prog'); p.hidden = f==null; if(f!=null) p.firstElementChild.style.width=(f*100).toFixed(1)+'%'; }
+
+$('#connect').addEventListener('click', async () => {
+  const btn = $('#connect'); btn.disabled = true;
+  try {
+    status('Connecting…');
+    if (dev) dev.close();
+    if (player) player.stop();
+    dev = await KO2.connect();
+    player = new Player(dev.output);
+    player.onTick = f => { const g = document.querySelector('.rollgrid'); const ph = document.querySelector('.playhead'); if (!g || !ph) return; ph.hidden = f == null || !showHead(); if (f != null) g.style.setProperty('--ph', f); };
+    const info = await dev.greet();
+    $('#meta').innerHTML = `${info.product||'EP-133'} · OS ${info.os_version||'?'}<br>serial ${info.serial||'?'}`;
+    await dev.fsInit();
+    status('Looking up projects…');
+    const root = await dev.ls(0);
+    const projDir = root.find(e => e.name === 'projects');
+    const sndDir = root.find(e => e.name === 'sounds');
+    projDirNode = projDir.node;
+    const projects = (await dev.ls(projDir.node)).filter(e => e.dir);
+    const out = [];
+    for (let i = 0; i < projects.length; i++) {
+      const p = projects[i];
+      status(`Reading project ${p.name} (${i+1}/${projects.length})…`);
+      const tar = await dev.get(p.node, (g, t) => progress((i + g / t) / projects.length));
+      out.push(makeProject(p.name, tar, p.node));
+    }
+    DATA = out; sel = null; render();
+    status('Fetching sample names…');
+    const sounds = sndDir ? await dev.ls(sndDir.node) : [];
+    const byId = {}; sounds.forEach(s => { const id = parseInt(s.name, 10); if (id) byId[id] = s.node; });
+    const used = new Set();
+    DATA.forEach(p => p.pats.forEach(x => x.ev.forEach(e => { const sid = p.pads[x.g.toLowerCase() + (e[0] + 1)]; if (sid) used.add(sid); })));
+    let k = 0;
+    for (const sid of used) {
+      if (byId[sid] && !soundNames[sid]) { const m = await dev.metadata(byId[sid]); soundNames[sid] = m.name || ''; }
+      progress(++k / used.size);
+    }
+    render();
+    progress(null);
+    const n = DATA.reduce((a, p) => a + p.pats.filter(x => x.notes).length, 0);
+    status(`Done: ${n} patterns with notes in ${DATA.length} projects.`);
+  } catch (e) {
+    progress(null);
+    status(e && (e.name === 'SecurityError' || e.name === 'NotAllowedError') ? 'Chrome was not allowed to use MIDI. Allow MIDI via the lock icon in the address bar and try again.' : (e.message || String(e)), true);
+  } finally { btn.disabled = false; }
+});
+
+$('#tarfiles').addEventListener('change', async ev => {
+  const files = Array.from(ev.target.files).sort((a, b) => a.name.localeCompare(b.name));
+  DATA = [];
+  for (const f of files) {
+    const id = (f.name.match(/(\d+)/) || [, f.name])[1].padStart(2, '0');
+    DATA.push(makeProject(id, new Uint8Array(await f.arrayBuffer()), null));
+  }
+  sel = null; cur = 0; render();
+  status(`Opened ${files.length} backup file(s). Sample names are only available with the sampler connected.`);
+});
+
+function render(){
+  if (!DATA.length) return;
+  if (cur >= DATA.length) cur = 0;
+  $('#intro').hidden = true;
+  const nav = $('#projects'); nav.hidden = false;
+  nav.innerHTML = DATA.map((p, i) => {
+    const n = p.pats.filter(x => x.notes).length;
+    return `<button class="pbtn" aria-pressed="${i===cur}" data-i="${i}"><b>${p.p}</b><small>${p.changes && p.changes.length ? '● edited' : (n ? n+' pat' : 'empty')}</small></button>`;
+  }).join('');
+  const p = DATA[cur], card = $('#project'); card.hidden = false;
+  const withNotes = p.pats.filter(x => x.notes);
+  let h = `<div class="ph"><h2>Project ${p.p}</h2>
+    <span class="stat"><b>${p.bpm ?? '–'}</b> BPM</span>
+    <span class="stat"><b>${withNotes.length}</b> patterns with notes</span>
+    <span class="stat"><b>${withNotes.reduce((n,x)=>n+x.notes,0)}</b> notes</span></div>`;
+  if (!p.pats.length) h += `<p class="none">This project is empty: no patterns recorded.</p>`;
+  else {
+    h += `<h3>Patterns by group</h3><div class="groups">`;
+    for (const g of ['A','B','C','D']) {
+      const list = p.pats.filter(x => x.g === g);
+      h += `<div class="grow" data-g="${g}"><div class="gl" style="background:${GC[g]}">${g}</div><div class="pats" style="--gc:${GC[g]}">`;
+      h += list.length ? list.map(x => `<button class="pat ${x.notes?'':'empty'}" draggable="true" aria-pressed="${sel===g+x.n}" data-k="${g+x.n}"><span class="n">${String(x.n).padStart(2,'0')}</span><span class="i">${x.bars}b · ${x.notes}n</span></button>`).join('')
+                         : `<span class="none" style="padding-top:8px">no patterns</span>`;
+      h += `</div></div>`;
+    }
+    h += `</div>`;
+    const cursel = p.pats.find(q => q.g + q.n === sel) || p.pats.find(q => q.notes) || p.pats[0];
+    h += `<div class="edit"><span>Move</span>
+      <select id="mvFrom" aria-label="Pattern to move">${p.pats.map(q => `<option value="${q.g+q.n}" ${q===cursel?'selected':''}>${q.g}${String(q.n).padStart(2,'0')}</option>`).join('')}</select>
+      <span>to</span>
+      <select id="mvG" aria-label="Target group">${['A','B','C','D'].map(g => `<option ${cursel&&cursel.g===g?'selected':''}>${g}</option>`).join('')}</select>
+      <input id="mvN" type="number" min="1" max="99" value="${cursel ? cursel.n : 1}" aria-label="Target number">
+      <button class="play" id="mvGo">Move</button>
+      <span class="stat">or drag a pattern onto another pattern or a group</span></div>`;
+    if (p.changes.length) {
+      h += `<div class="pending"><strong>${p.changes.length} change${p.changes.length===1?'':'s'}, not yet on the K.O. II</strong>
+        <ul>${p.changes.map(c => `<li>${c}</li>`).join('')}</ul>
+        <div class="row">
+          <button class="btn small" id="writeProj" ${dev && p.node ? '' : 'disabled'}>Write to K.O. II</button>
+          <button class="btn small sec" id="dlProj">Download .tar</button>
+          <button class="btn small sec" id="undoProj">Undo changes</button>
+        </div>
+        <span class="stat">Before writing, the tool backs up this project from the K.O. II and downloads it. After writing, it reads the project back to verify.</span></div>`;
+    }
+    h += `<div class="roll" id="roll"></div>`;
+  }
+  if (p.scenes.length) {
+    const rows = [], sc = p.scenes;
+    for (let i = 0; i < sc.length; i++) {
+      const sig = sc[i].slice(1).join(); let j = i;
+      while (j + 1 < sc.length && sc[j+1].slice(1).join() === sig && sc[j+1][0] === sc[j][0] + 1) j++;
+      rows.push({ from: sc[i][0], to: sc[j][0], v: sc[i].slice(1) }); i = j;
+    }
+    const has = (g, n) => p.pats.some(x => x.g === g && x.n === n && x.notes);
+    const pad2 = n => String(n).padStart(2, '0');
+    h += `<h3>Scenes</h3><div class="tbl"><table><thead><tr><th>scene</th><th>A</th><th>B</th><th>C</th><th>D</th><th></th></tr></thead><tbody>`;
+    h += rows.map(r => `<tr><td>${r.from===r.to ? pad2(r.from) : pad2(r.from)+'–'+pad2(r.to)}</td>${r.v.map((n,gi)=>`<td class="${has('ABCD'[gi],n)?'':'dim'}">${pad2(n)}</td>`).join('')}<td><button class="play" data-play="scene" data-v="${r.v.join(',')}" aria-pressed="${isPlaying('scene', cur+':'+r.v.join(','))}" ${player ? '' : 'disabled'}>${isPlaying('scene', cur+':'+r.v.join(',')) ? '■' : '▶'}</button></td></tr>`).join('');
+    h += `</tbody></table></div><p class="foot">Grey numbers point to a pattern without notes: that group is silent in that scene.</p>`;
+  }
+  card.innerHTML = h;
+  drawRoll();
+}
+
+function drawRoll(){
+  const el = $('#roll'); if (!el) return;
+  const p = DATA[cur];
+  let x = sel && p.pats.find(q => q.g + q.n === sel);
+  if (!x) { x = p.pats.find(q => q.notes); if (!x) { el.innerHTML = ''; return; } sel = x.g + x.n; }
+  document.querySelectorAll('.pat').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === sel));
+  const bars = Math.max(1, x.bars), len = bars * TPB;
+  const pads = [...new Set(x.ev.map(e => e[0]))].sort((a, b) => a - b);
+  let h = `<div class="rollhead"><strong>${x.g}${String(x.n).padStart(2,'0')}</strong>
+    <span class="stat"><b>${x.bars}</b> ${x.bars===1?'bar':'bars'}</span><span class="stat"><b>${x.notes}</b> notes</span><span class="stat"><b>${pads.length}</b> pads</span>
+    <button class="play" data-play="pat" data-k="${x.g+x.n}" aria-pressed="${isPlaying('pat', cur+':'+x.g+x.n)}" ${player && x.notes ? '' : 'disabled'} title="${player ? 'Play on the K.O. II (space)' : 'Connect the K.O. II first'}">${isPlaying('pat', cur+':'+x.g+x.n) ? '■ stop' : '▶ play'}</button></div>`;
+  if (!x.notes) { el.innerHTML = h + `<p class="none">This pattern exists but contains no notes.</p>`; return; }
+  h += `<div class="rollscroll"><div class="rollgrid" style="--gc:${GC[x.g]}"><div class="playhead" hidden></div><div class="lab" style="height:18px"></div><div class="ruler">`;
+  for (let b = 0; b < bars; b++) h += `<span style="left:${b/bars*100}%">${b+1}</span>`;
+  h += `</div>`;
+  const bg = `repeating-linear-gradient(90deg,var(--line) 0 1px,transparent 1px calc(100%/${bars*16})),repeating-linear-gradient(90deg,var(--muted) 0 1px,transparent 1px calc(100%/${bars}))`;
+  for (const pd of pads) {
+    const sid = p.pads[x.g.toLowerCase() + (pd + 1)];
+    const name = sid ? (soundNames[sid] || 'sample ' + sid) : '';
+    h += `<div class="lab" title="${name}">pad ${pd+1} <em>${name}</em></div><div class="lane" style="background-image:${bg}">`;
+    for (const e of x.ev.filter(e => e[0] === pd)) {
+      const l = e[1] / len * 100, w = Math.max(e[2], 12) / len * 100;
+      h += `<div class="note" style="left:${l}%;width:${Math.min(w, 100 - l)}%;opacity:${.35 + .65 * e[3] / 127}" title="tick ${e[1]} · velocity ${e[3]}"></div>`;
+    }
+    h += `</div>`;
+  }
+  el.innerHTML = h + `</div></div>`;
+}
+
+function makeProject(id, tar, node){
+  return { ...parseProject(id, untar(tar)), tar, orig: tar, node, changes: [] };
+}
+const label = q => q.g + String(q.n).padStart(2, '0');
+function sameBytes(a, b){ if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; }
+function saveFile(bytes, name){
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/x-tar' }));
+  const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+function stamp(){ const d = new Date(), z = n => String(n).padStart(2, '0'); return `${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`; }
+function applyMove(fromKey, toG, toN){
+  const p = DATA[cur];
+  const from = p.pats.find(q => q.g + q.n === fromKey);
+  if (!from) return;
+  toN = Math.round(toN);
+  if (!(toN >= 1 && toN <= 99)) { status('Choose a pattern number from 1 to 99.', true); return; }
+  const to = { g: toG, n: toN };
+  if (from.g === to.g && from.n === to.n) return;
+  stopPlay();
+  try {
+    const target = p.pats.find(q => q.g === to.g && q.n === to.n);
+    const r = movePattern(p.tar, from, to);
+    const next = { ...parseProject(p.p, untar(r.tar)), tar: r.tar, orig: p.orig, node: p.node, changes: p.changes.slice() };
+    let msg = target ? `Swapped ${label(from)} ⇄ ${label(to)}` : `Moved ${label(from)} → ${label(to)}`;
+    if (from.g !== to.g) msg += ' (other group: plays with the pads of group ' + to.g + ', scenes unchanged)';
+    else msg += ', scenes updated';
+    next.changes.push(msg);
+    DATA[cur] = next; sel = to.g + to.n;
+    status(msg + '. Not written yet.');
+    render();
+  } catch (e) { status(e.message || String(e), true); }
+}
+async function writeProject(){
+  const p = DATA[cur];
+  if (!dev || !p.node) return;
+  stopPlay();
+  const btns = document.querySelectorAll('#writeProj,#undoProj,#connect'); btns.forEach(b => b.disabled = true);
+  try {
+    status(`Backing up project ${p.p}…`);
+    await dev.fsInit();
+    const now = await dev.get(p.node, (g, t) => progress(g / t * 0.3));
+    saveFile(now, `KO2-P${p.p}-backup-${stamp()}.tar`);
+    if (!sameBytes(now, p.orig)) throw new Error(`Project ${p.p} has changed on the K.O. II since it was read. Nothing was written; a backup of its current state was downloaded. Connect again to load the current project.`);
+    let active = null;
+    try { active = (await dev.metadata(projDirNode)).active ?? null; } catch {}
+    status(`Writing project ${p.p}…`);
+    try {
+      await dev.put(p.tar, p.p, projDirNode, p.node, true, (g, t) => progress(0.3 + g / t * 0.5));
+    } catch (e) {
+      // a half-written project is worse than the old one: put the backup back
+      status(`Write failed (${e.message}). Restoring the backup…`, true);
+      try {
+        await new Promise(r => setTimeout(r, 3000));
+        await dev.fsInit();
+        await dev.put(now, p.p, projDirNode, p.node, true);
+        await dev.fsInit();
+        const check = await dev.get(p.node);
+        throw new Error(sameBytes(check, now)
+          ? `Write failed (${e.message}). The project was restored to its state from before the write.`
+          : `Write failed and the restore could not be confirmed. Restore the downloaded backup with Teenage Engineering's backup tool.`);
+      } catch (e2) { throw e2.message.startsWith('Write failed') ? e2 : new Error(`Write failed and so did the restore (${e2.message}). Restore the downloaded backup.`); }
+    }
+    await dev.fsInit();
+    status('Verifying…');
+    const back = await dev.get(p.node, (g, t) => progress(0.8 + g / t * 0.2));
+    progress(null);
+    if (!sameBytes(back, p.tar)) throw new Error('Verification failed: what the K.O. II returns differs from what was written. Restore the downloaded backup if needed.');
+    // the K.O. II plays the active project from memory: tell it to load the new version
+    if (active === p.node) { try { await dev.setMetadata(projDirNode, { active: p.node }); } catch {} }
+    DATA[cur] = { ...p, orig: back, tar: back, changes: [] };
+    status(`Project ${p.p} written and verified.`);
+    render();
+  } catch (e) { progress(null); status(e.message || String(e), true); }
+  finally { btns.forEach(b => b.disabled = false); }
+}
+function isPlaying(kind, key){ return !!playing && playing.kind === kind && playing.key === key; }
+function showHead(){ return playing && playing.kind === 'pat' && playing.key === cur + ':' + sel; }
+function stopPlay(){ if (player) player.stop(); playing = null; }
+function togglePlay(kind, key, pats){
+  if (!player) return;
+  if (isPlaying(kind, key)) { stopPlay(); render(); return; }
+  stopPlay();
+  playing = { kind, key };
+  player.play(pats, DATA[cur].bpm);
+  render();
+}
+function playSelected(){
+  const x = DATA[cur].pats.find(q => q.g + q.n === sel);
+  if (x && x.notes) togglePlay('pat', cur + ':' + sel, [x]);
+}
+document.addEventListener('click', ev => {
+  if (ev.target.closest('#mvGo')) { applyMove($('#mvFrom').value, $('#mvG').value, +$('#mvN').value); return; }
+  if (ev.target.closest('#writeProj')) { writeProject(); return; }
+  if (ev.target.closest('#dlProj')) { saveFile(DATA[cur].tar, `KO2-P${DATA[cur].p}-edited-${stamp()}.tar`); return; }
+  if (ev.target.closest('#undoProj')) { stopPlay(); const p = DATA[cur]; DATA[cur] = makeProject(p.p, p.orig, p.node); sel = null; status('Changes undone.'); render(); return; }
+  const pl = ev.target.closest('[data-play]');
+  if (pl) {
+    if (pl.dataset.play === 'pat') { sel = pl.dataset.k; playSelected(); }
+    else {
+      const v = pl.dataset.v.split(',').map(Number);
+      const pats = ['A','B','C','D'].map((g, i) => DATA[cur].pats.find(q => q.g === g && q.n === v[i])).filter(q => q && q.notes);
+      togglePlay('scene', cur + ':' + pl.dataset.v, pats);
+    }
+    return;
+  }
+  const pb = ev.target.closest('.pbtn'); if (pb) { stopPlay(); cur = +pb.dataset.i; sel = null; render(); return; }
+  const pt = ev.target.closest('.pat'); if (pt) { sel = pt.dataset.k; if (playing && playing.kind === 'pat') { stopPlay(); playSelected(); } else drawRoll(); }
+});
+let dragKey = null;
+document.addEventListener('dragstart', ev => { const c = ev.target.closest && ev.target.closest('.pat'); if (!c) return; dragKey = c.dataset.k; ev.dataTransfer.setData('text/plain', dragKey); ev.dataTransfer.effectAllowed = 'move'; });
+document.addEventListener('dragend', () => { dragKey = null; document.querySelectorAll('.drop').forEach(e => e.classList.remove('drop')); });
+document.addEventListener('dragover', ev => {
+  if (!dragKey) return;
+  const t = ev.target.closest('.pat') || ev.target.closest('.grow');
+  document.querySelectorAll('.drop').forEach(e => e !== t && e.classList.remove('drop'));
+  if (t && t.dataset.k !== dragKey) { ev.preventDefault(); t.classList.add('drop'); }
+});
+document.addEventListener('drop', ev => {
+  if (!dragKey) return;
+  ev.preventDefault();
+  const chip = ev.target.closest('.pat'), row = ev.target.closest('.grow');
+  const p = DATA[cur], from = p.pats.find(q => q.g + q.n === dragKey);
+  if (chip && chip.dataset.k !== dragKey) {
+    const t = p.pats.find(q => q.g + q.n === chip.dataset.k);
+    applyMove(dragKey, t.g, t.n);
+  } else if (row && from) {
+    const g = row.dataset.g;
+    if (g !== from.g) {
+      let n = from.n;
+      if (p.pats.some(q => q.g === g && q.n === n)) { n = 1; while (p.pats.some(q => q.g === g && q.n === n) && n < 99) n++; }
+      applyMove(dragKey, g, n);
+    }
+  }
+  dragKey = null;
+});
+document.addEventListener('keydown', ev => {
+  if (!DATA.length || ev.target.closest('input,select')) return;
+  if (ev.key === ' ' && !ev.target.closest('button')) { ev.preventDefault(); if (playing) { stopPlay(); render(); } else playSelected(); return; }
+  if (/^[1-9]$/.test(ev.key) && DATA[+ev.key - 1]) { stopPlay(); cur = +ev.key - 1; sel = null; render(); }
+  if (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') {
+    const list = DATA[cur].pats; if (!list.length) return;
+    let i = list.findIndex(q => q.g + q.n === sel);
+    i = (i + (ev.key === 'ArrowRight' ? 1 : -1) + list.length) % list.length;
+    sel = list[i].g + list[i].n; ev.preventDefault();
+    if (playing && playing.kind === 'pat') { stopPlay(); playSelected(); } else drawRoll();
+  }
+});
+window.addEventListener('beforeunload', ev => { if (DATA.some(p => p.changes && p.changes.length)) { ev.preventDefault(); ev.returnValue = ''; } });
+</script>
+</body>
+</html>

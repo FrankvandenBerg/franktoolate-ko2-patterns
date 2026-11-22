@@ -1,0 +1,176 @@
+<title>KO II reeksen</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: device-panel header, project selector strip, then per project scenes + group rows A–D, piano roll on select */
+:root{
+  --bg:#e9e9e6; --panel:#f6f6f3; --ink:#1c1d1f; --muted:#6b6d70; --line:#cfd0cc;
+  --orange:#ff5a1f; --a:#ff5a1f; --b:#2f6fe0; --c:#1d9a6c; --d:#8a55d6; --empty:#d9d9d5;
+  --display:"Archivo",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141517; --panel:#1d1f22; --ink:#ececea; --muted:#9a9c9f; --line:#33363a;
+  --orange:#ff6a33; --a:#ff6a33; --b:#5b8ff0; --c:#3bbf8e; --d:#a87ff0; --empty:#2b2e32; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141517; --panel:#1d1f22; --ink:#ececea; --muted:#9a9c9f; --line:#33363a;
+  --orange:#ff6a33; --a:#ff6a33; --b:#5b8ff0; --c:#3bbf8e; --d:#a87ff0; --empty:#2b2e32; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--display);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 48px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:12px}
+h1{font-size:clamp(28px,5vw,44px);font-weight:800;letter-spacing:-.02em;margin:0;text-wrap:balance}
+h1 span{color:var(--orange)}
+.meta{font-family:var(--mono);font-size:12px;color:var(--muted);line-height:1.6;text-align:right}
+.lede{max-width:65ch;color:var(--muted);line-height:1.55;margin:0}
+.projects{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:6px}
+.pbtn{font:inherit;cursor:pointer;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;
+  padding:10px 4px 8px;display:flex;flex-direction:column;align-items:center;gap:2px}
+.pbtn b{font-family:var(--mono);font-size:18px;font-weight:500}
+.pbtn small{font-family:var(--mono);font-size:10px;color:var(--muted)}
+.pbtn[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.pbtn[aria-pressed="true"] small{color:var(--bg);opacity:.7}
+.pbtn:focus-visible,.pat:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+@media (max-width:560px){.projects{grid-template-columns:repeat(5,minmax(0,1fr))}}
+section.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.ph{display:flex;flex-wrap:wrap;gap:8px 22px;align-items:baseline}
+.ph h2{margin:0;font-size:24px;font-weight:800}
+.stat{font-family:var(--mono);font-size:13px;color:var(--muted)} .stat b{color:var(--ink);font-weight:500}
+h3{margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.groups{display:flex;flex-direction:column;gap:10px}
+.grow{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:start}
+.gl{font-family:var(--mono);font-weight:500;font-size:15px;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff}
+.pats{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.pat{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:5px;padding:5px 8px;
+  font-family:var(--mono);font-size:12px;display:flex;gap:6px;align-items:baseline;font-variant-numeric:tabular-nums}
+.pat .n{font-weight:500;font-size:13px}
+.pat .i{color:var(--muted);font-size:11px}
+.pat.empty{opacity:.45}
+.pat[aria-pressed="true"]{border-color:var(--gc);box-shadow:inset 0 0 0 1px var(--gc)}
+.none{font-family:var(--mono);font-size:12px;color:var(--muted);padding-top:8px}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+th,td{padding:4px 12px 4px 0;text-align:left;white-space:nowrap}
+th{color:var(--muted);font-weight:400;border-bottom:1px solid var(--line)}
+td.dim{color:var(--muted)}
+.roll{display:flex;flex-direction:column;gap:8px;min-width:0}
+.rollhead{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline}
+.rollhead strong{font-size:18px}
+.rollscroll{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+.rollgrid{display:grid;grid-template-columns:150px 1fr;min-width:520px}
+.lab{font-family:var(--mono);font-size:11px;padding:0 8px;height:22px;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--panel)}
+.lab em{font-style:normal;color:var(--muted)}
+.lane{position:relative;height:22px;border-bottom:1px solid var(--line)}
+.note{position:absolute;top:4px;height:14px;border-radius:2px;background:var(--gc);min-width:3px}
+.ruler{position:relative;height:18px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10px;color:var(--muted)}
+.ruler span{position:absolute;top:3px;transform:translateX(3px)}
+.foot{font-size:12px;color:var(--muted);line-height:1.55;max-width:75ch}
+.foot code{font-family:var(--mono)}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>K.O. II <span>reeksen</span></h1>
+    </div>
+    <div class="meta">EP-133 · OS 2.5.1<br>uitgelezen via USB-MIDI · 21 nov 2026</div>
+  </header>
+  <p class="lede" id="lede"></p>
+  <nav class="projects" id="projects" aria-label="Projecten"></nav>
+  <section class="card" id="project"></section>
+  <p class="foot">Alleen uitgelezen, er is niets op de sampler veranderd. Patterns zijn per groep (A–D) genummerd 01–99, zoals in de handleiding van Teenage Engineering. "maten" is de patternlengte (1 maat = 384 ticks bij 96 ppqn). Een pattern kan bestaan zonder noten: dan heeft de KO II het bestand aangemaakt maar staat er niets in. Padnummers 1–12 zijn de interne volgorde, niet de opdruk op de pads. Song-mode-volgorde is nog niet uitgelezen.</p>
+</div>
+
+<script>
+const DATA = __DATA__;
+const GC = {A:'var(--a)',B:'var(--b)',C:'var(--c)',D:'var(--d)'};
+const TPB = 384;
+const $ = s => document.querySelector(s);
+let cur = 0, sel = null;
+
+const total = DATA.reduce((n,p)=>n+p.pats.filter(x=>x.notes).length,0);
+const used = DATA.filter(p=>p.pats.some(x=>x.notes)).length;
+$('#lede').textContent = `${total} patterns met noten, verspreid over ${used} van de 9 projecten. Kies een project, en klik een pattern om de noten te zien.`;
+
+function render(){
+  $('#projects').innerHTML = DATA.map((p,i)=>{
+    const n = p.pats.filter(x=>x.notes).length;
+    return `<button class="pbtn" aria-pressed="${i===cur}" data-i="${i}"><b>${p.p}</b><small>${n?n+' pat':'leeg'}</small></button>`;
+  }).join('');
+  const p = DATA[cur];
+  const withNotes = p.pats.filter(x=>x.notes);
+  let h = `<div class="ph"><h2>Project ${p.p}</h2>
+    <span class="stat"><b>${p.bpm ?? '–'}</b> BPM</span>
+    <span class="stat"><b>${withNotes.length}</b> patterns met noten</span>
+    <span class="stat"><b>${withNotes.reduce((n,x)=>n+x.notes,0)}</b> noten</span></div>`;
+  if(!p.pats.length){
+    h += `<p class="none">Dit project is leeg: geen patterns opgenomen.</p>`;
+  } else {
+    h += `<h3>Patterns per groep</h3><div class="groups">`;
+    for(const g of ['A','B','C','D']){
+      const list = p.pats.filter(x=>x.g===g).sort((a,b)=>a.n-b.n);
+      h += `<div class="grow"><div class="gl" style="background:${GC[g]}">${g}</div><div class="pats" style="--gc:${GC[g]}">`;
+      h += list.length ? list.map(x=>{
+        const k = g+x.n, on = sel===k;
+        return `<button class="pat ${x.notes?'':'empty'}" aria-pressed="${on}" data-k="${k}"><span class="n">${String(x.n).padStart(2,'0')}</span><span class="i">${x.bars}m · ${x.notes}n</span></button>`;
+      }).join('') : `<span class="none">geen patterns</span>`;
+      h += `</div></div>`;
+    }
+    h += `</div>`;
+    h += `<div class="roll" id="roll"></div>`;
+  }
+  // scenes
+  const sc = p.scenes;
+  if(sc.length){
+    const rows = [];
+    for(let i=0;i<sc.length;i++){
+      const s=sc[i], sig=s.slice(1).join();
+      let j=i; while(j+1<sc.length && sc[j+1].slice(1).join()===sig && sc[j+1][0]===sc[j][0]+1) j++;
+      rows.push({from:s[0],to:sc[j][0],v:s.slice(1)}); i=j;
+    }
+    const has = (g,n)=>p.pats.some(x=>x.g===g&&x.n===n&&x.notes);
+    h += `<h3>Scenes</h3><div class="tbl"><table><thead><tr><th>scene</th><th>A</th><th>B</th><th>C</th><th>D</th></tr></thead><tbody>`;
+    h += rows.map(r=>`<tr><td>${r.from===r.to?String(r.from).padStart(2,'0'):String(r.from).padStart(2,'0')+'–'+String(r.to).padStart(2,'0')}</td>${
+      r.v.map((n,gi)=>{const g='ABCD'[gi];return `<td class="${has(g,n)?'':'dim'}">${String(n).padStart(2,'0')}</td>`}).join('')}</tr>`).join('');
+    h += `</tbody></table></div><p class="foot">Grijze nummers verwijzen naar een pattern zonder noten (die groep is stil in die scene).</p>`;
+  }
+  $('#project').innerHTML = h;
+  drawRoll();
+}
+
+function drawRoll(){
+  const el = $('#roll'); if(!el) return;
+  const p = DATA[cur];
+  let x = sel && p.pats.find(q=>q.g+q.n===sel);
+  if(!x){ x = p.pats.find(q=>q.notes); if(!x){el.innerHTML='';return;} sel = x.g+x.n;
+    document.querySelectorAll('.pat').forEach(b=>b.setAttribute('aria-pressed', b.dataset.k===sel)); }
+  const len = Math.max(1,x.bars)*TPB;
+  const pads = [...new Set(x.ev.map(e=>e[0]))].sort((a,b)=>a-b);
+  let h = `<div class="rollhead"><strong>${x.g}${String(x.n).padStart(2,'0')}</strong>
+    <span class="stat"><b>${x.bars}</b> ${x.bars===1?'maat':'maten'}</span><span class="stat"><b>${x.notes}</b> noten</span><span class="stat"><b>${pads.length}</b> pads</span></div>`;
+  if(!x.notes){ el.innerHTML = h + `<p class="none">Dit pattern bestaat maar bevat geen noten.</p>`; return; }
+  h += `<div class="rollscroll"><div class="rollgrid" style="--gc:${GC[x.g]}"><div class="lab" style="height:18px"></div><div class="ruler">`;
+  for(let b=0;b<x.bars;b++){ h += `<span style="left:${b/x.bars*100}%">${b+1}</span>`; }
+  h += `</div>`;
+  const bg = `repeating-linear-gradient(90deg,var(--line) 0 1px,transparent 1px calc(100%/${x.bars*16})),repeating-linear-gradient(90deg,var(--muted) 0 1px,transparent 1px calc(100%/${x.bars}))`;
+  for(const pd of pads){
+    const s = p.pads[x.g.toLowerCase()+(pd+1)];
+    const name = s && s[1] ? s[1] : (s ? 'sound '+s[0] : '');
+    h += `<div class="lab" title="${name}">pad ${pd+1} <em>${name}</em></div><div class="lane" style="background-image:${bg};background-size:100% 100%;opacity:1">`;
+    for(const e of x.ev.filter(e=>e[0]===pd)){
+      const l = e[1]/len*100, w = Math.max(e[2],12)/len*100;
+      h += `<div class="note" style="left:${l}%;width:${Math.min(w,100-l)}%;opacity:${.35+.65*e[3]/127}" title="tick ${e[1]} · velocity ${e[3]}"></div>`;
+    }
+    h += `</div>`;
+  }
+  h += `</div></div>`;
+  el.innerHTML = h;
+}
+
+document.addEventListener('click', ev=>{
+  const pb = ev.target.closest('.pbtn'); if(pb){ cur=+pb.dataset.i; sel=null; try{localStorage.setItem('ko2p',cur)}catch(e){} render(); return; }
+  const pt = ev.target.closest('.pat'); if(pt){ sel=pt.dataset.k; document.querySelectorAll('.pat').forEach(b=>b.setAttribute('aria-pressed', b===pt)); drawRoll(); }
+});
+try{ const v=+localStorage.getItem('ko2p'); if(v>=0&&v<9) cur=v; }catch(e){}
+render();
+</script>

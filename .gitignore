@@ -1,0 +1,12 @@
+# Personal K.O. II backups stay out of git
+backup-*/
+*.tar
+.DS_Store
+__pycache__/
+venv/
+
+# Server secrets
+config.local.php
+
+# Local deploy settings
+.deploy.env
