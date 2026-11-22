@@ -577,7 +577,7 @@ function drawRoll(g){
   const k = x.g + x.n;
   let h = `<div class="rollhead"><strong>${label(x)}</strong>
     <span class="stat"><b>${x.bars}</b> ${x.bars===1?'bar':'bars'}</span><span class="stat"><b>${x.notes}</b> notes</span>
-    <button class="play" data-play="pat" data-k="${k}" aria-pressed="${isPlaying('pat', cur+':'+k)}" ${player && x.notes ? '' : 'disabled'} title="${player ? 'Play only this pattern' : 'Connect the K.O. II first'}">${isPlaying('pat', cur+':'+k) ? '■ stop' : '▶ play'}</button>
+    <button class="play" data-play="pat" data-k="${k}" aria-pressed="${isPlaying('pat', cur+':'+k)}" ${player && x.notes ? '' : 'disabled'} title="${player ? 'Play only this pattern' : 'Connect the K.O. II first'}">${isPlaying('pat', cur+':'+k) ? '■ stop ' + x.g : '▶ play ' + x.g}</button>
     <span class="stat counter"></span>
     <span class="pill live followBadge" ${follow.running ? '' : 'hidden'}>● K.O. II playing</span>
     <button class="play" data-edit="${g}" aria-pressed="${editing}">${editing ? '✓ done editing' : '✎ edit notes'}</button>
