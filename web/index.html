@@ -330,6 +330,7 @@ $('#connect').addEventListener('click', async () => {
     deviceSerial = info.serial || 'unknown';
     sndDirNode = sndDir ? sndDir.node : 1000;
     await loadSounds(sndDir);
+    startSync();
     render();
     progress(null);
     const n = DATA.reduce((a, p) => a + p.pats.filter(x => x.notes).length, 0);
@@ -1051,11 +1052,37 @@ async function toggleSound(node){
   } catch (e) { status('Could not play the sound: ' + (e.message || e), true); playingSound = null; }
   renderSounds();
 }
+// ---- Live sync: re-read the active project from the K.O. II after you play/record on the device ----
+// The device does not announce pattern changes, so the tool reads the active project again when playback
+// stops, and every few seconds while nothing plays. Only changed bytes cause a redraw.
+const sync = { busy: false, timer: null, last: 0 };
+async function syncActive(reason){
+  if (!dev || sync.busy || follow.running || playing || drag) return;
+  const i = DATA.findIndex(p => p.node && p.node === deviceActiveNode); if (i < 0) return;
+  const p = DATA[i];
+  sync.busy = true;
+  try {
+    const now = await dev.get(p.node);
+    sync.last = Date.now();
+    if (sameBytes(now, p.orig)) return;
+    if (p.changes.length) { status(`Project ${p.p} changed on the K.O. II. Your unwritten changes are kept; undo them to load the device version.`); return; }
+    const keep = { selScene, sel, openRolls: [...openRolls] };
+    DATA[i] = makeProject(p.p, now, p.node);
+    if (DATA[i].scenes.some(sc => sc[0] === keep.selScene)) selScene = keep.selScene;
+    status(`Updated project ${p.p} from the K.O. II${reason ? ' (' + reason + ')' : ''}.`);
+    if (i === cur) render();
+  } catch (e) { /* device busy: try again later */ }
+  finally { sync.busy = false; }
+}
+function startSync(){
+  clearInterval(sync.timer);
+  sync.timer = setInterval(() => { if (document.visibilityState === 'visible') syncActive(''); }, 6000);
+}
 function onDeviceMidi(d){
   const st = d[0];
   if (st === 0xFA) { follow.running = true; follow.clocks = 0; follow.heard = []; showFollow(); }
   else if (st === 0xFB) { follow.running = true; follow.heard = []; showFollow(); }
-  else if (st === 0xFC) { follow.running = false; showFollow(); }
+  else if (st === 0xFC) { follow.running = false; showFollow(); setTimeout(() => syncActive('after stop'), 800); }
   else if (st === 0xF2) { follow.clocks = ((d[2] << 7) | d[1]) * 6; }
   else if (st === 0xF8) { if (follow.running) { follow.clocks++; scheduleFollowFrame(); } }
   else if ((st & 0xF0) === 0x90 && d[2] > 0) { follow.lastNote = performance.now(); if (follow.running) heardNote(d[1]); }
