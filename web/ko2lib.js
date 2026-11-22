@@ -388,10 +388,10 @@
   function parseProject(id, files) {
     const f32 = (b, o) => new DataView(b.buffer, b.byteOffset + o, 4).getFloat32(0, true);
     const bpm = files.settings ? Math.round(f32(files.settings, 4) * 100) / 100 : null;
-    const pads = {};
+    const pads = {}, padCh = {};
     for (const [n, d] of Object.entries(files)) {
       const m = n.match(/^pads\/([abcd])\/p(\d+)$/);
-      if (m && d.length > 3) pads[m[1] + Number(m[2])] = (d[2] << 8) + d[1];
+      if (m && d.length > 3) { pads[m[1] + Number(m[2])] = (d[2] << 8) + d[1]; padCh[m[1] + Number(m[2])] = d[3]; }
     }
     const pats = [];
     for (const [n, d] of Object.entries(files)) {
@@ -419,7 +419,7 @@
       const n = Math.min(sc[612], 99, sc.length - 613);
       for (let i = 0; i < n; i++) song.push(sc[613 + i]);
     }
-    return { p: id, bpm, pads, pats, scenes, song, activeScene, songEditable: !!(sc && sc.length >= 712) };
+    return { p: id, bpm, pads, padCh, pats, scenes, song, activeScene, songEditable: !!(sc && sc.length >= 712) };
   }
 
   // Plays patterns on the device by sending timestamped MIDI notes.
@@ -468,9 +468,11 @@
         for (const p of patterns) {
           const len = Math.max(1, p.bars) * TICKS_PER_BAR;
           for (let off = 0; off < segTicks; off += len) {
-            for (const [pad, pos, dur, vel] of p.ev) {
+            for (const [pad, pos, dur, vel, pitch] of p.ev) {
               if (pos >= len) continue;
-              events.push({ t: segStart + off + pos, g: p.g, note: NOTE_BASE[p.g] + (PAD_NOTE_OFFSET[pad] ?? pad), vel: Math.max(1, Math.min(127, vel)), dur: Math.max(dur, 12) });
+              // default: trigger the pad by the note map; a hook can route pitched notes elsewhere
+              const m = (this.noteFor && this.noteFor(p.g, pad, pitch)) || { ch: 0, note: NOTE_BASE[p.g] + (PAD_NOTE_OFFSET[pad] ?? pad) };
+              events.push({ t: segStart + off + pos, g: p.g, ch: m.ch, note: m.note, vel: Math.max(1, Math.min(127, vel)), dur: Math.max(dur, 12) });
             }
           }
         }
@@ -492,8 +494,8 @@
           const at = this.start + (this.loop * loopTicks + e.t) * this.msPerTick;
           if (at > horizon) break;
           if (!this.muted.has(e.g)) {
-            this.output.send([0x90, e.note, e.vel], at);
-            this.output.send([0x80, e.note, 0], at + e.dur * this.msPerTick);
+            this.output.send([0x90 | (e.ch || 0), e.note, e.vel], at);
+            this.output.send([0x80 | (e.ch || 0), e.note, 0], at + e.dur * this.msPerTick);
           }
           if (++this.idx >= events.length) { this.idx = 0; this.loop++; }
         }

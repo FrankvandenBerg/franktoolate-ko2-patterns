@@ -94,6 +94,9 @@ td.dim{color:var(--muted)}
 .note.hit{background:var(--ink);box-shadow:0 0 0 2px var(--gc);opacity:1!important}
 .pill.live{display:inline-block;font:500 11px var(--mono);padding:2px 8px;border-radius:999px;border:1px solid var(--orange);color:var(--orange)}
 .pill.live[hidden]{display:none}
+.note .nn{position:absolute;left:3px;top:-1px;font:600 8px/10px var(--mono);color:#fff;white-space:nowrap;pointer-events:none;text-shadow:0 0 2px rgba(0,0,0,.4)}
+.note.pitched{overflow:hidden}
+.lab .keys{font:500 9px var(--mono);border:1px solid var(--line);border-radius:3px;padding:0 3px;color:var(--muted)}
 .rollgrid.editing .lane{cursor:crosshair}
 .rollgrid.editing .note{cursor:grab;touch-action:none}
 .rollgrid.editing .note::after{content:"";position:absolute;right:0;top:0;bottom:0;width:6px;cursor:ew-resize}
@@ -216,6 +219,7 @@ const $ = s => document.querySelector(s);
 const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null, selScene = null, focusSel = null, libOpen = false, editGroup = null, noteSel = -1;
 const openRolls = new Set(); let rollsTouched = false;
 // Following the K.O. II's own playback via its MIDI clock (24 per quarter note) and start/stop.
+let pitchMode = false;
 let view = 'projects', sounds = [], soundsQuery = '', soundsFilter = 'all', deviceSerial = null, sndDirNode = 1000, playingSound = null;
 const follow = { running: false, clocks: 0, raf: 0, lastNote: 0, heard: [], followScenes: true, guess: null }; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
 let projDirNode = 2000, DATA = [], soundNames = {}, cur = 0, sel = null, dev = null, player = null, playing = null; // playing: {kind:'pat'|'scene', key}
@@ -232,6 +236,12 @@ $('#connect').addEventListener('click', async () => {
     dev = await KO2.connect();
     player = new Player(dev.output);
     dev.onRealtime = onDeviceMidi;
+    player.noteFor = (g, pad, pitch) => {
+      const p = DATA[cur]; const c = p && p.padCh ? p.padCh[g.toLowerCase() + (pad + 1)] : 0;
+      // A pad with its own MIDI channel (sound edit → MIDI) can be played at a pitch on that channel.
+      if (pitchMode && c >= 1 && c <= 16) return { ch: c - 1, note: pitch };
+      return null;
+    };
     dev.onFileEvent = onDeviceFileEvent;
     player.onTick = updatePlayheads;
     const info = await dev.greet();
@@ -503,9 +513,10 @@ function drawRoll(g){
     h += `<div class="edit">
       <label>Length (bars) <input id="edBars" type="number" min="1" max="99" value="${bars}" style="width:4.5em"></label>
       ${n ? `<span>Selected note: pad ${KO2Lib.PAD_LABELS[n[0]]}, step ${Math.floor(n[1] / 24) + 1}</span>
+        <label>Pitch <select id="edPitch">${Array.from({ length: 97 }, (_, i) => i + 12).map(m => `<option value="${m}"${m === n[4] ? ' selected' : ''}>${noteName(m)}${m === 60 ? ' (root)' : ''}</option>`).join('')}</select></label>
         <label>Velocity <input id="edVel" type="number" min="1" max="127" value="${n[3]}" style="width:4.5em"></label>
         <label>Length (steps) <input id="edLen" type="number" min="1" max="${bars * 16}" value="${Math.max(1, Math.round(n[2] / 24))}" style="width:4.5em"></label>
-        <button class="play del" id="edDel">✕ delete note</button>` : `<span class="stat">Click an empty spot to add a note, or press and drag to the right to draw a longer one. Drag a note to move it (also to another pad), drag its right edge to change its length. Select a note and press Delete to remove it. Hold Alt while dragging to leave the 1/16 grid.</span>`}
+        <button class="play del" id="edDel">✕ delete note</button>` : `<span class="stat">Click an empty spot to add a note, or press and drag to the right to draw a longer one. Drag a note to move it (also to another pad), drag its right edge to change its length. Select a note and press Delete to remove it. Hold Alt while dragging to leave the 1/16 grid. ↑/↓ changes the pitch of the selected note (Shift = octave).</span>`}
     </div>`;
   } else if (!x.notes) { el.innerHTML = h + `<p class="none">This pattern has no notes yet. Click "edit notes" to add some.</p>`; return; }
   h += `<div class="rollscroll"><div class="rollgrid${editing ? ' editing' : ''}" data-len="${len}" style="--gc:${GC[x.g]}"><div class="playhead" hidden></div><div class="lab" style="height:18px"></div><div class="ruler">`;
@@ -513,14 +524,23 @@ function drawRoll(g){
   h += `</div>`;
   const bg = `repeating-linear-gradient(90deg,var(--line) 0 1px,transparent 1px calc(100%/${bars*16})),repeating-linear-gradient(90deg,var(--muted) 0 1px,transparent 1px calc(100%/${bars}))`;
   const rows = editing ? [0,1,2,3,4,5,6,7,8,9,10,11] : used.sort((a, b) => a - b);
+  const pitchedSet = pitchedPads(x);
   for (const pd of rows) {
     const sid = p.pads[x.g.toLowerCase() + (pd + 1)];
     const name = sid ? (soundNames[sid] || 'sample ' + sid) : (editing ? 'no sample' : '');
-    h += `<div class="lab${sid ? '' : ' nosample'}" title="${name}">pad ${KO2Lib.PAD_LABELS[pd] ?? pd + 1} <em>${name}</em></div><div class="lane" data-pad="${pd}" style="background-image:${bg}">`;
+    const pitched = pitchedSet.has(pd);
+    // Pitched pads get a taller lane: higher notes sit higher, like a small piano roll.
+    const ps = x.ev.filter(e => e[0] === pd).map(e => e[4]);
+    const hi = pitched ? Math.max(...ps) : 60, lo = pitched ? Math.min(...ps) : 60, span = hi - lo;
+    const laneH = pitched ? Math.max(22, span * 6 + 16) : 22;
+    h += `<div class="lab${sid ? '' : ' nosample'}" title="${name}" style="height:${laneH}px">pad ${KO2Lib.PAD_LABELS[pd] ?? pd + 1}${pitched ? ` <span class="keys">${span ? noteName(lo) + '–' + noteName(hi) : noteName(lo)}</span>` : ''} <em>${name}</em></div><div class="lane" data-pad="${pd}"${pitched ? ` data-hi="${hi}"` : ''} style="background-image:${bg};height:${laneH}px">`;
     x.ev.forEach((e, i) => {
       if (e[0] !== pd) return;
       const l = e[1] / len * 100, w = Math.max(e[2], 12) / len * 100;
-      h += `<div class="note${editing && i === noteSel ? ' picked' : ''}" data-ni="${i}" style="left:${l}%;width:${Math.min(w, 100 - l)}%;opacity:${.35 + .65 * e[3] / 127}" title="step ${Math.floor(e[1] / 24) + 1} · velocity ${e[3]}"></div>`;
+      const isP = pitchedSet.has(pd);
+      const top = isP ? (hi - e[4]) * 6 + 4 : 4, hgt = isP ? 8 : 14;
+      const lab = isP && w > 3 ? `<span class="nn">${noteName(e[4])}</span>` : '';
+      h += `<div class="note${editing && i === noteSel ? ' picked' : ''}${isP ? ' pitched' : ''}" data-ni="${i}" style="left:${l}%;width:${Math.min(w, 100 - l)}%;top:${top}px;height:${hgt}px;opacity:${.35 + .65 * e[3] / 127}" title="${noteName(e[4])} · step ${Math.floor(e[1] / 24) + 1} · velocity ${e[3]}">${lab}</div>`;
     });
     h += `</div>`;
   }
@@ -542,6 +562,10 @@ function commitNotes(x, ev, bars){
     if (wasPlaying) { stopPlay(); playSelected(); }
   } catch (e) { status(e.message || String(e), true); }
 }
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+function noteName(m){ return NOTE_NAMES[m % 12] + (Math.floor(m / 12) - 1); }
+// A pad counts as pitched when any of its notes is not on the root (60 = C4).
+function pitchedPads(x){ const s = new Set(); for (const e of x.ev) if (e[4] !== 60) s.add(e[0]); return s; }
 function pitchFor(x, pad){ const e = x.ev.find(q => q[0] === pad); return e ? e[4] : 60; }
 
 // Pointer editing in the piano roll
@@ -588,6 +612,12 @@ document.addEventListener('pointermove', ev => {
     const under = document.elementFromPoint(ev.clientX, ev.clientY);
     const lane = under && under.closest && under.closest('.rollgrid.editing .lane');
     if (lane && +lane.dataset.pad !== drag.pad) { drag.newPad = +lane.dataset.pad; drag.moved = true; lane.appendChild(drag.el); }
+    else if (lane && lane.dataset.hi) {
+      // within a pitched lane, moving up or down changes the pitch (6 px per semitone)
+      const r = lane.getBoundingClientRect(), hi = +lane.dataset.hi;
+      const pitch = Math.max(0, Math.min(127, hi - Math.round((ev.clientY - r.top - 8) / 6)));
+      if (pitch !== drag.pitch) { drag.pitch = pitch; drag.moved = true; drag.el.style.top = ((hi - pitch) * 6 + 4) + 'px'; drag.el.title = noteName(pitch); }
+    }
   } else if (drag.mode === 'draw') {
     const end = Math.max(0, Math.min(len, (ev.clientX - rect.left) / rect.width * len));
     let d = end - drag.startTick; d = ev.altKey ? Math.round(d) : Math.ceil(d / 24) * 24;
@@ -612,7 +642,7 @@ document.addEventListener('pointerup', () => {
   if (!d.moved) return;
   const ev2 = d.x.ev.map(e => [...e]);
   const e = ev2[noteSel];
-  if (d.mode === 'move') { if (d.tick != null) e[1] = d.tick; if (d.newPad != null) { e[0] = d.newPad; e[4] = pitchFor(d.x, d.newPad); } }
+  if (d.mode === 'move') { if (d.tick != null) e[1] = d.tick; if (d.newPad != null) { e[0] = d.newPad; e[4] = pitchFor(d.x, d.newPad); } else if (d.pitch != null) e[4] = d.pitch; }
   else if (d.dur != null) e[2] = d.dur;
   const idx = sortedIndexAfterBuild(ev2, noteSel);
   commitNotes(d.x, ev2);
@@ -1070,11 +1100,12 @@ document.addEventListener('input', ev => {
 document.addEventListener('change', ev => {
   if (ev.target.id === 'sndF') { soundsFilter = ev.target.value; renderSounds(); return; }
   if (ev.target.id === 'followScenes') { follow.followScenes = ev.target.checked; follow.heard = []; return; }
-  if (ev.target.id === 'edVel' || ev.target.id === 'edLen' || ev.target.id === 'edBars') {
+  if (ev.target.id === 'edVel' || ev.target.id === 'edLen' || ev.target.id === 'edBars' || ev.target.id === 'edPitch') {
     const x = editPattern(); if (!x) return;
     if (ev.target.id === 'edBars') { const b = Math.max(1, Math.min(99, Math.round(+ev.target.value || 1))); commitNotes(x, x.ev, b); return; }
     const ev2 = x.ev.map(e => [...e]), e = ev2[noteSel]; if (!e) return;
-    if (ev.target.id === 'edVel') e[3] = Math.max(1, Math.min(127, Math.round(+ev.target.value || 100)));
+    if (ev.target.id === 'edPitch') e[4] = Math.max(0, Math.min(127, +ev.target.value));
+    else if (ev.target.id === 'edVel') e[3] = Math.max(1, Math.min(127, Math.round(+ev.target.value || 100)));
     else e[2] = Math.max(1, Math.round(+ev.target.value || 1)) * 24;
     commitNotes(x, ev2);
     return;
@@ -1132,6 +1163,11 @@ document.addEventListener('drop', ev => {
 });
 document.addEventListener('keydown', ev => {
   if (!DATA.length || ev.target.closest('input,select')) return;
+  if ((ev.key === 'ArrowUp' || ev.key === 'ArrowDown') && editGroup && noteSel >= 0) {
+    const x = editPattern(); const ev2 = x.ev.map(e => [...e]), e = ev2[noteSel];
+    if (e) { ev.preventDefault(); e[4] = Math.max(0, Math.min(127, e[4] + (ev.key === 'ArrowUp' ? 1 : -1) * (ev.shiftKey ? 12 : 1))); commitNotes(x, ev2); }
+    return;
+  }
   if ((ev.key === 'Delete' || ev.key === 'Backspace') && editGroup && noteSel >= 0) { ev.preventDefault(); deleteSelectedNote(); return; }
   if (ev.key === 'Escape' && editGroup && noteSel >= 0) { noteSel = -1; drawRolls(); return; }
   if ((ev.key === 'Delete' || ev.key === 'Backspace') && focusSel) { ev.preventDefault(); stageDelete(focusSel, ev.shiftKey); return; }
