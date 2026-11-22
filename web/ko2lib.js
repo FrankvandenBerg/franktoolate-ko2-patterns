@@ -146,12 +146,13 @@
       return out;
     }
 
-    async get(node, onProgress) {
+    async get(node, onProgress, abortable = false) {
       const r = await this.req(CMD_FILE, [3, 0, node >> 8, node & 255, 0, 0, 0, 0]);
       const size = be32(r, 3);
       const buf = new Uint8Array(size);
       let got = 0;
       for (let page = 0; got < size; page = (page + 1) & 0xffff) {
+        if (abortable && this.abortGet) throw new Error('read aborted');   // e.g. the device started playing
         const c = await this.req(CMD_FILE, [3, 1, page >> 8, page & 255]);
         if (be16(c, 0) !== page) throw new Error('Unexpected page while downloading');
         if (c.length <= 2) break;
