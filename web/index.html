@@ -116,6 +116,26 @@ td.dim{color:var(--muted)}
 .viewtabs button[aria-pressed="true"]{color:var(--ink);border-bottom-color:var(--orange)}
 table.snd td{white-space:normal}
 table.snd td:nth-child(8){max-width:280px;color:var(--muted)}
+#pendingPop{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));width:min(380px,calc(100vw - 32px));z-index:50;
+  background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.22),0 2px 6px rgba(0,0,0,.08);
+  padding:14px 16px;display:flex;flex-direction:column;gap:10px;animation:ppIn .22s ease-out}
+#pendingPop[hidden]{display:none}
+@keyframes ppIn{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){#pendingPop{animation:none}}
+.pp-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pp-dot{width:10px;height:10px;border-radius:50%;background:var(--orange);box-shadow:0 0 0 4px color-mix(in srgb,var(--orange) 25%,transparent)}
+.pp-sub{font-size:12px;color:var(--muted)}
+.pp-toggle{margin-left:auto;font:inherit;font-size:16px;line-height:1;width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer}
+.pp-list{margin:0;padding-left:20px;font-family:var(--mono);font-size:12px;line-height:1.6;max-height:180px;overflow:auto}
+.pp-actions{display:flex;gap:8px;flex-wrap:wrap}
+.pp-note{margin:0;font-size:11px;color:var(--muted);line-height:1.45}
+#modal{position:fixed;inset:0;z-index:60;background:rgba(10,10,12,.45);display:grid;place-items:center;padding:16px}
+#modal[hidden]{display:none}
+.md-card{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.3);width:min(720px,100%);max-height:85vh;overflow:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.md-head{display:flex;align-items:center;gap:8px}
+.md-body .tbl{max-height:60vh;overflow:auto}
+a.play{text-decoration:none;display:inline-block}
+.err{color:#c42}
 .focus{outline:2px solid var(--orange)!important;outline-offset:2px}
 .chan[data-chan]{cursor:pointer}
 .hint{font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:6px;padding:8px 10px}
@@ -257,7 +277,7 @@ $('#tarfiles').addEventListener('change', async ev => {
 function render(){
   if (!DATA.length) return;
   const vt = $('#viewTabs'); if (vt) { vt.hidden = false; vt.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view)); }
-  if (view === 'sounds') { $('#intro').hidden = true; $('#projects').hidden = true; renderSounds(); return; }
+  if (view === 'sounds') { $('#intro').hidden = true; $('#projects').hidden = true; drawPending(null); renderSounds(); return; }
   if (cur >= DATA.length) cur = 0;
   $('#intro').hidden = true;
   const nav = $('#projects'); nav.hidden = false;
@@ -272,17 +292,9 @@ function render(){
     <span class="stat"><b>${p.bpm ?? '–'}</b> BPM</span>
     <span class="stat"><b>${p.scenes.length}</b> scene${p.scenes.length === 1 ? '' : 's'}</span>
     <span class="stat"><b>${p.pats.filter(x => x.notes).length}</b> patterns with notes</span>
-    ${dev && p.node ? (deviceActiveNode === p.node ? '<span class="pill live">● active on the K.O. II</span>' : '<button class="play" id="openOnDevice" title="Switch the K.O. II to this project">open on K.O. II</button>') : ''}</div>`;
-  if (p.changes.length) {
-    h += `<div class="pending"><strong>${p.changes.length} change${p.changes.length===1?'':'s'}, not yet on the K.O. II</strong>
-      <ul>${p.changes.map(c => `<li>${c}</li>`).join('')}</ul>
-      <div class="row">
-        <button class="btn small" id="writeProj" ${dev && p.node ? '' : 'disabled'}>Write to K.O. II</button>
-        <button class="btn small sec" id="dlProj">Download .tar</button>
-        <button class="btn small sec" id="undoProj">Undo changes</button>
-      </div>
-      <span class="stat">Before writing, the tool backs up this project from the K.O. II and downloads it. After writing, it reads the project back to verify.</span></div>`;
-  }
+    ${dev && p.node ? (deviceActiveNode === p.node ? '<span class="pill live">● active on the K.O. II</span>' : '<button class="play" id="openOnDevice" title="Switch the K.O. II to this project">open on K.O. II</button>') : ''}
+    ${KO_BASE !== null ? '<button class="play" id="openBackups" title="Backups stored on the server">backups</button>' : ''}</div>`;
+  drawPending(p);
   h += songHtml(p);
   if (!p.scenes.length) {
     h += `<h3>Scenes</h3><p class="none">This project has no scenes yet.</p>`;
@@ -402,6 +414,24 @@ function updateCycle(t){
     const len = Math.max(1, x.bars) * TPB;
     out.textContent = `bar ${Math.floor((t % len) / TPB) + 1}/${x.bars} · round ${Math.floor(t / len) % 99 + 1}`;
   });
+}
+// Floating card that appears as soon as a project has changes that are not on the K.O. II yet.
+let pendingOpen = true;
+function drawPending(p){
+  let el = $('#pendingPop');
+  if (!el) { el = document.createElement('aside'); el.id = 'pendingPop'; el.setAttribute('aria-live', 'polite'); document.body.appendChild(el); }
+  if (view !== 'projects' || !p || !p.changes.length) { el.hidden = true; return; }
+  el.hidden = false;
+  const n = p.changes.length;
+  el.innerHTML = `<div class="pp-head"><span class="pp-dot"></span><strong>${n} change${n === 1 ? '' : 's'} in project ${p.p}</strong><span class="pp-sub">not on the K.O. II yet</span>
+      <button class="pp-toggle" id="ppToggle" aria-expanded="${pendingOpen}" title="${pendingOpen ? 'Hide the list' : 'Show the list'}">${pendingOpen ? '–' : '+'}</button></div>
+    ${pendingOpen ? `<ol class="pp-list">${p.changes.map(c => `<li>${c}</li>`).join('')}</ol>` : ''}
+    <div class="pp-actions">
+      <button class="btn small" id="writeProj" ${dev && p.node ? '' : 'disabled'} title="${dev ? '' : 'Connect the K.O. II first'}">Write to K.O. II</button>
+      <button class="btn small sec" id="undoProj">Undo all</button>
+      <button class="btn small sec" id="dlProj" title="Download the edited project as a .tar file">Download</button>
+    </div>
+    <p class="pp-note">Before writing, a backup of the project on the K.O. II is stored on the server. Afterwards the project is read back to check it.</p>`;
 }
 function groupAudible(g){ return soloGroup ? soloGroup === g : mixer[g]; }
 function applyMixer(){ if (player) for (const g of 'ABCD') player.setMuted(g, !groupAudible(g)); render(); }
@@ -641,8 +671,8 @@ async function writeProject(){
     status(`Backing up project ${p.p}…`);
     await dev.fsInit();
     const now = await dev.get(p.node, (g, t) => progress(g / t * 0.3));
-    saveFile(now, `KO2-P${p.p}-backup-${stamp()}.tar`);
-    if (!sameBytes(now, p.orig)) throw new Error(`Project ${p.p} has changed on the K.O. II since it was read. Nothing was written; a backup of its current state was downloaded. Connect again to load the current project.`);
+    await storeBackup(p, now, 'before write');
+    if (!sameBytes(now, p.orig)) throw new Error(`Project ${p.p} has changed on the K.O. II since it was read. Nothing was written; a backup of its current state was stored. Connect again to load the current project.`);
     let active = null;
     try { active = (await dev.metadata(projDirNode)).active ?? null; } catch {}
     status(`Writing project ${p.p}…`);
@@ -659,14 +689,14 @@ async function writeProject(){
         const check = await dev.get(p.node);
         throw new Error(sameBytes(check, now)
           ? `Write failed (${e.message}). The project was restored to its state from before the write.`
-          : `Write failed and the restore could not be confirmed. Restore the downloaded backup with Teenage Engineering's backup tool.`);
-      } catch (e2) { throw e2.message.startsWith('Write failed') ? e2 : new Error(`Write failed and so did the restore (${e2.message}). Restore the downloaded backup.`); }
+          : `Write failed and the restore could not be confirmed. Restore the stored backup (backups button) or use Teenage Engineering's backup tool.`);
+      } catch (e2) { throw e2.message.startsWith('Write failed') ? e2 : new Error(`Write failed and so did the restore (${e2.message}). Restore the stored backup (backups button).`); }
     }
     await dev.fsInit();
     status('Verifying…');
     const back = await dev.get(p.node, (g, t) => progress(0.8 + g / t * 0.2));
     progress(null);
-    if (!sameBytes(back, p.tar)) throw new Error('Verification failed: what the K.O. II returns differs from what was written. Restore the downloaded backup if needed.');
+    if (!sameBytes(back, p.tar)) throw new Error('Verification failed: what the K.O. II returns differs from what was written. Restore the stored backup if needed (backups button).');
     // the K.O. II plays the active project from memory: tell it to load the new version
     if (active === p.node) { try { await dev.setMetadata(projDirNode, { active: p.node }); } catch {} }
     DATA[cur] = { ...p, orig: back, tar: back, changes: [] };
@@ -700,7 +730,7 @@ function stageDelete(f, withPatterns){
     }
     DATA[cur] = { ...parseProject(p.p, untar(tar)), tar, orig: p.orig, node: p.node, changes: [...p.changes, msg] };
     focusSel = null;
-    status(msg + '. Not written yet — use Undo changes to take it back.');
+    status(msg + '. Not written yet — use Undo all to take it back.');
     render();
   } catch (e) { status(e.message || String(e), true); }
 }
@@ -736,13 +766,13 @@ async function openOnDevice(){
 // ---- Sound library: cached per user and device on the server, refreshed from the K.O. II when it changed ----
 const KO_BASE = (document.querySelector('meta[name="ko-base"]') || {}).content ?? null;
 const CSRF = (document.querySelector('meta[name="csrf"]') || {}).content || '';
-async function api(path, opts = {}){
+async function api(path, opts = {}, as = 'json'){
   if (KO_BASE === null) throw new Error('offline');                 // local copy of the tool: no server
   for (let i = 0; i < 4; i++) {
     const r = await fetch(KO_BASE + '/' + path, { credentials: 'same-origin', ...opts, headers: { 'Content-Type': 'application/json', 'X-CSRF': CSRF, ...(opts.headers || {}) } });
     if (r.status === 415) { await new Promise(res => setTimeout(res, 800 * (i + 1))); continue; }   // host bot check: retry
-    if (!r.ok) throw new Error('Server error ' + r.status);
-    return r.json();
+    if (!r.ok) { let m = ''; try { m = (await r.json()).error || ''; } catch {} throw new Error(m || 'Server error ' + r.status); }
+    return as === 'bytes' ? new Uint8Array(await r.arrayBuffer()) : r.json();
   }
   throw new Error('The server kept refusing the request.');
 }
@@ -772,6 +802,47 @@ async function loadSounds(sndDir){
     try { await api('api/sounds?device=' + encodeURIComponent(deviceSerial), { method: 'POST', body: JSON.stringify({ sounds }) }); }
     catch { try { localStorage.setItem('ko2-sounds-' + deviceSerial, JSON.stringify(sounds)); } catch {} }
   }
+}
+// ---- Backups: stored on the server per user, device and project ----
+async function storeBackup(p, bytes, note){
+  try {
+    await api(`api/backups?device=${encodeURIComponent(deviceSerial || 'unknown')}&project=${encodeURIComponent(p.p)}&note=${encodeURIComponent(note)}`,
+      { method: 'POST', body: bytes, headers: { 'Content-Type': 'application/octet-stream' } });
+    return 'server';
+  } catch (e) {
+    saveFile(bytes, `KO2-P${p.p}-backup-${stamp()}.tar`);         // no server (local copy) or upload failed: download instead
+    return 'download';
+  }
+}
+function modal(title, body){
+  let m = $('#modal');
+  if (!m) { m = document.createElement('div'); m.id = 'modal'; document.body.appendChild(m); }
+  m.innerHTML = `<div class="md-card" role="dialog" aria-modal="true" aria-label="${title}"><div class="md-head"><strong>${title}</strong><button class="pp-toggle" data-modal-close aria-label="Close">×</button></div><div class="md-body">${body}</div></div>`;
+  m.hidden = false;
+}
+function closeModal(){ const m = $('#modal'); if (m) m.hidden = true; }
+async function openBackups(){
+  const p = DATA[cur];
+  modal(`Backups of project ${p.p}`, '<p class="stat">Loading…</p>');
+  try {
+    const { backups } = await api(`api/backups?device=${encodeURIComponent(deviceSerial || '')}&project=${encodeURIComponent(p.p)}`);
+    const rows = backups.map(b => `<tr><td class="mono">${b.created_at.slice(0, 16)} UTC</td><td>${b.note || ''}</td><td class="mono">${Math.round(b.size / 1024)} KB</td>
+      <td><a class="play" href="${KO_BASE}/api/backups/${b.id}" download>download</a> <button class="play" data-restore="${b.id}" data-when="${b.created_at.slice(0, 16)}">restore…</button></td></tr>`).join('');
+    modal(`Backups of project ${p.p}`, backups.length
+      ? `<p class="stat">The tool stores the project here before every write. The newest 25 per project are kept.</p><div class="tbl"><table><thead><tr><th>When</th><th>Note</th><th>Size</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : '<p class="none">No backups yet. One is stored automatically before every write to the K.O. II.</p>');
+  } catch (e) { modal('Backups', `<p class="err">${e.message === 'offline' ? 'Backups are kept on the server; this local copy of the tool has no server.' : 'Could not load the backups: ' + e.message}</p>`); }
+}
+async function restoreBackup(id, when){
+  const p = DATA[cur];
+  try {
+    const tar = await api(`api/backups/${id}`, {}, 'bytes');
+    stopPlay();
+    DATA[cur] = { ...parseProject(p.p, untar(tar)), tar, orig: p.orig, node: p.node, changes: [...p.changes, `Restore the backup from ${when} UTC`] };
+    closeModal(); pendingOpen = true;
+    status('Backup loaded. Check it, then use Write to K.O. II to put it back on the device.');
+    render();
+  } catch (e) { modal('Restore', `<p class="err">Could not load the backup: ${e.message}</p>`); }
 }
 function applySoundNames(){ for (const x of sounds) if (x.name) soundNames[x.slot] = x.name; }
 function soundUsage(){
@@ -931,6 +1002,10 @@ function playSelected(){
 document.addEventListener('click', ev => {
   if (ev.target.closest('#mvGo')) { applyMove($('#mvFrom').value, $('#mvG').value, +$('#mvN').value); return; }
   if (ev.target.closest('#writeProj')) { writeProject(); return; }
+  if (ev.target.closest('#ppToggle')) { pendingOpen = !pendingOpen; drawPending(DATA[cur]); return; }
+  if (ev.target.closest('#openBackups')) { openBackups(); return; }
+  if (ev.target.closest('[data-modal-close]') || ev.target.id === 'modal') { closeModal(); return; }
+  const rb = ev.target.closest('[data-restore]'); if (rb) { restoreBackup(+rb.dataset.restore, rb.dataset.when); return; }
   const vb = ev.target.closest('[data-view]'); if (vb) { stopPlay(); view = vb.dataset.view; render(); return; }
   const sb2 = ev.target.closest('[data-snd]'); if (sb2) { toggleSound(+sb2.dataset.snd); return; }
   if (ev.target.closest('#openOnDevice')) { openOnDevice(); return; }

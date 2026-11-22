@@ -45,6 +45,56 @@ if (passkey_count((int)$u['id']) === 0) redirect('passkey');
 
 $tools = tools_for($u);
 
+// Project backups: kept per user, device and project; the newest 25 per project are kept.
+if ($route === 'api/backups' || preg_match('~^api/backups/(\d+)$~', $route, $bm)) {
+    $dir = KO_HOME . '/data/backups/' . (int)$u['id'];
+    $id = isset($bm[1]) ? (int)$bm[1] : 0;
+    if ($id) {
+        $st = db()->prepare('SELECT * FROM ko_backups WHERE id = ? AND user_id = ?');
+        $st->execute([$id, $u['id']]);
+        $b = $st->fetch();
+        if (!$b || !is_file("$dir/$id.tar")) json_out(['error' => 'Backup not found.'], 404);
+        if ($method === 'DELETE') { check_csrf(); @unlink("$dir/$id.tar"); db()->prepare('DELETE FROM ko_backups WHERE id = ?')->execute([$id]); json_out(['ok' => true]); }
+        header('Content-Type: application/x-tar');
+        header('Content-Disposition: attachment; filename="KO2-P' . preg_replace('~\D~', '', $b['project']) . '-' . str_replace([' ', ':'], ['-', ''], $b['created_at']) . '.tar"');
+        header('Cache-Control: no-store');
+        readfile("$dir/$id.tar");
+        exit;
+    }
+    $device = substr(preg_replace('~[^A-Za-z0-9_-]~', '', (string)($_GET['device'] ?? '')), 0, 64);
+    $project = substr(preg_replace('~[^0-9]~', '', (string)($_GET['project'] ?? '')), 0, 8);
+    if ($method === 'GET') {
+        $sql = 'SELECT id, device, project, size, note, created_at FROM ko_backups WHERE user_id = ?';
+        $args = [$u['id']];
+        if ($device !== '') { $sql .= ' AND device = ?'; $args[] = $device; }
+        if ($project !== '') { $sql .= ' AND project = ?'; $args[] = $project; }
+        $st = db()->prepare($sql . ' ORDER BY id DESC LIMIT 200');
+        $st->execute($args);
+        json_out(['backups' => $st->fetchAll()]);
+    }
+    if ($method === 'POST') {
+        check_csrf();
+        if ($device === '' || $project === '') json_out(['error' => 'Missing device or project.'], 400);
+        $data = (string)file_get_contents('php://input');
+        if (strlen($data) < 512 || strlen($data) > 16 * 1024 * 1024) json_out(['error' => 'That does not look like a project archive.'], 400);
+        if (!is_dir($dir) && !mkdir($dir, 0700, true)) json_out(['error' => 'Could not create the backup folder.'], 500);
+        $note = mb_substr((string)($_GET['note'] ?? ''), 0, 190);
+        db()->prepare('INSERT INTO ko_backups (user_id, device, project, size, sha256, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            ->execute([$u['id'], $device, $project, strlen($data), hash('sha256', $data), $note, now()]);
+        $newId = (int)db()->lastInsertId();
+        if (file_put_contents("$dir/$newId.tar", $data) === false) json_out(['error' => 'Could not store the backup.'], 500);
+        // retention: newest 25 per user, device and project
+        $st = db()->prepare('SELECT id FROM ko_backups WHERE user_id = ? AND device = ? AND project = ? ORDER BY id DESC');
+        $st->execute([$u['id'], $device, $project]);
+        foreach (array_slice($st->fetchAll(PDO::FETCH_COLUMN), 25) as $old) {
+            @unlink("$dir/$old.tar");
+            db()->prepare('DELETE FROM ko_backups WHERE id = ?')->execute([$old]);
+        }
+        json_out(['ok' => true, 'id' => $newId]);
+    }
+    json_out(['error' => 'Unsupported method.'], 405);
+}
+
 // Small JSON API for the tools (signed-in users only)
 if ($route === 'api/sounds') {
     $device = substr(preg_replace('~[^A-Za-z0-9_-]~', '', (string)($_GET['device'] ?? '')), 0, 64);

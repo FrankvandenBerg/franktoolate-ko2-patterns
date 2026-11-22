@@ -93,7 +93,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 $msg = 'Tool access saved.';
             } elseif ($action === 'delete') {
                 if (empty($_POST['confirm'])) throw new RuntimeException('Tick "sure" to delete an account.');
-                foreach (['ko_passkeys', 'ko_tokens', 'ko_tool_access'] as $tbl) db()->prepare("DELETE FROM $tbl WHERE user_id = ?")->execute([$id]);
+                foreach (['ko_passkeys', 'ko_tokens', 'ko_tool_access', 'ko_sound_cache', 'ko_backups'] as $tbl) db()->prepare("DELETE FROM $tbl WHERE user_id = ?")->execute([$id]);
+                foreach (glob(KO_HOME . '/data/backups/' . $id . '/*.tar') ?: [] as $f) @unlink($f);
+                @rmdir(KO_HOME . '/data/backups/' . $id);
                 db()->prepare('DELETE FROM ko_users WHERE id = ?')->execute([$id]);
                 log_event(null, 'admin_change', 'deleted ' . $t['email'] . ' by ' . $me['email']);
                 $msg = 'Account deleted.';
