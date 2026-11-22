@@ -259,6 +259,21 @@
     return { tar: buildTar(ordered), changed: true, swapped };
   }
 
+  // Replace the song list (scene number per position, 1–99 positions) in a project archive.
+  function setSong(tarBuf, positions) {
+    const entries = tarEntries(tarBuf);
+    const sc = entries.find(e => e.name === 'scenes');
+    if (!sc || sc.data.length < 712) throw new Error('This project has no song data (it may come from an older OS). Make a song on the K.O. II first.');
+    if (positions.length < 1 || positions.length > 99) throw new Error('A song has 1 to 99 positions.');
+    if (positions.some(n => !Number.isInteger(n) || n < 1 || n > 99)) throw new Error('Scene numbers run from 1 to 99.');
+    const d = new Uint8Array(sc.data);
+    d[612] = positions.length;
+    d.fill(0, 613, 712);
+    positions.forEach((n, i) => { d[613 + i] = n; });
+    sc.data = d;
+    return buildTar(entries);
+  }
+
   // pattern events: 8 bytes = pos(LE16), pad*8, note, velocity, duration(LE16), flag
   function parseProject(id, files) {
     const f32 = (b, o) => new DataView(b.buffer, b.byteOffset + o, 4).getFloat32(0, true);
@@ -294,7 +309,7 @@
       const n = Math.min(sc[612], 99, sc.length - 613);
       for (let i = 0; i < n; i++) song.push(sc[613 + i]);
     }
-    return { p: id, bpm, pads, pats, scenes, song, activeScene };
+    return { p: id, bpm, pads, pats, scenes, song, activeScene, songEditable: !!(sc && sc.length >= 712) };
   }
 
   // Plays patterns on the device by sending timestamped MIDI notes.
@@ -372,6 +387,6 @@
     }
   }
 
-  const api = { KO2, Player, untar, parseProject, pack7, unpack7, tarEntries, buildTar, movePattern };
+  const api = { KO2, Player, untar, parseProject, pack7, unpack7, tarEntries, buildTar, movePattern, setSong };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KO2Lib = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -90,6 +90,9 @@ td.dim{color:var(--muted)}
 .pos{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:5px;padding:5px 8px;background:var(--bg);display:flex;gap:6px;align-items:baseline}
 .pos .k{color:var(--muted);font-size:10px}
 .pos.now{border-color:var(--orange);box-shadow:inset 0 0 0 1px var(--orange)}
+.pos select{font:inherit;font-size:12px;padding:1px 2px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--ink)}
+.pos button{font:inherit;font-size:11px;line-height:1;cursor:pointer;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--ink);padding:3px 5px}
+.pos button:disabled{opacity:.35;cursor:default}
 .foot{font-size:12px;color:var(--muted);line-height:1.55;max-width:75ch;margin:0}
 </style>
 </head>
@@ -116,7 +119,7 @@ td.dim{color:var(--muted)}
 
 <script src="ko2lib.js"></script>
 <script>
-const { KO2, Player, untar, parseProject, movePattern } = window.KO2Lib;
+const { KO2, Player, untar, parseProject, movePattern, setSong } = window.KO2Lib;
 const GC = { A:'var(--a)', B:'var(--b)', C:'var(--c)', D:'var(--d)' };
 const TPB = 384;
 const $ = s => document.querySelector(s);
@@ -252,14 +255,32 @@ function sceneParts(p, sceneNo){
   return ['A','B','C','D'].map((g, i) => p.pats.find(q => q.g === g && q.n === sc[i + 1])).filter(Boolean);
 }
 function songHtml(p){
-  if (!p.song || !p.song.length) return `<h3>Song</h3><p class="none">No song arranged in this project.</p>`;
+  const editable = !!p.songEditable;
+  if (!p.song || !p.song.length) return `<h3>Song</h3><p class="none">${editable ? 'No song arranged in this project.' : 'This project has no song data (it may come from an older OS). Make a song on the K.O. II first.'}</p>`;
   const bars = p.song.map(n => Math.max(1, ...sceneParts(p, n).map(q => q.bars || 1)));
   const total = bars.reduce((a, b) => a + b, 0);
   const on = isPlaying('song', String(cur));
+  const sceneNos = [...new Set([...p.scenes.map(sc => sc[0]), ...p.song])].sort((a, b) => a - b);
   let h = `<h3>Song</h3><div class="ph"><span class="stat"><b>${p.song.length}</b> position${p.song.length === 1 ? '' : 's'}</span><span class="stat"><b>${total}</b> bars</span>
     <button class="play" data-play="song" aria-pressed="${on}" ${player ? '' : 'disabled'} title="${player ? 'Play the song on the K.O. II' : 'Connect the K.O. II first'}">${on ? '■ stop' : '▶ play song'}</button></div><div class="song">`;
-  h += p.song.map((n, i) => `<span class="pos"><span class="k">${i + 1}</span>scene ${String(n).padStart(2, '0')}<span class="k">${bars[i]}b</span></span>`).join('');
-  return h + `</div><p class="foot">The song as arranged in the K.O. II's song list editor (hold MAIN and press ENTER). Each position lasts as long as the longest pattern in its scene; the tool loops the song.</p>`;
+  h += p.song.map((n, i) => `<span class="pos"><span class="k">${i + 1}</span>` + (editable
+      ? `<select data-song-scene="${i}" aria-label="Scene at position ${i + 1}">${sceneNos.map(x => `<option value="${x}"${x === n ? ' selected' : ''}>scene ${String(x).padStart(2, '0')}</option>`).join('')}</select>`
+        + `<button data-song="left" data-i="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Move position ${i + 1} earlier">◀</button>`
+        + `<button data-song="right" data-i="${i}" ${i === p.song.length - 1 ? 'disabled' : ''} aria-label="Move position ${i + 1} later">▶</button>`
+        + `<button data-song="remove" data-i="${i}" ${p.song.length === 1 ? 'disabled' : ''} aria-label="Remove position ${i + 1}">✕</button>`
+      : `scene ${String(n).padStart(2, '0')}`) + `<span class="k">${bars[i]}b</span></span>`).join('');
+  if (editable) h += `<button class="play" data-song="add" ${p.song.length >= 99 ? 'disabled' : ''}>+ add position</button>`;
+  return h + `</div><p class="foot">The song as arranged in the K.O. II's song list editor (hold MAIN and press ENTER). Each position lasts as long as the longest pattern in its scene; the tool loops the song. Song changes are written together with your other changes.</p>`;
+}
+function applySong(next, msg){
+  const p = DATA[cur];
+  stopPlay();
+  try {
+    const tar = setSong(p.tar, next);
+    DATA[cur] = { ...parseProject(p.p, untar(tar)), tar, orig: p.orig, node: p.node, changes: [...p.changes, msg] };
+    status(msg + '. Not written yet.');
+    render();
+  } catch (e) { status(e.message || String(e), true); }
 }
 function drawRoll(){
   const el = $('#roll'); if (!el) return;
@@ -386,6 +407,14 @@ document.addEventListener('click', ev => {
   if (ev.target.closest('#writeProj')) { writeProject(); return; }
   if (ev.target.closest('#dlProj')) { saveFile(DATA[cur].tar, `KO2-P${DATA[cur].p}-edited-${stamp()}.tar`); return; }
   if (ev.target.closest('#undoProj')) { stopPlay(); const p = DATA[cur]; DATA[cur] = makeProject(p.p, p.orig, p.node); sel = null; status('Changes undone.'); render(); return; }
+  const sb = ev.target.closest('[data-song]');
+  if (sb && !sb.disabled) {
+    const p = DATA[cur], song = [...p.song], i = +sb.dataset.i, act = sb.dataset.song;
+    if (act === 'add') { song.push(song[song.length - 1] || 1); applySong(song, `Song: added position ${song.length} (scene ${String(song[song.length - 1]).padStart(2, '0')})`); }
+    else if (act === 'remove') { const [n] = song.splice(i, 1); applySong(song, `Song: removed position ${i + 1} (scene ${String(n).padStart(2, '0')})`); }
+    else { const j = act === 'left' ? i - 1 : i + 1; [song[i], song[j]] = [song[j], song[i]]; applySong(song, `Song: moved position ${i + 1} to ${j + 1}`); }
+    return;
+  }
   const pl = ev.target.closest('[data-play]');
   if (pl) {
     if (pl.dataset.play === 'pat') { sel = pl.dataset.k; playSelected(); }
@@ -403,6 +432,13 @@ document.addEventListener('click', ev => {
   }
   const pb = ev.target.closest('.pbtn'); if (pb) { stopPlay(); cur = +pb.dataset.i; sel = null; render(); return; }
   const pt = ev.target.closest('.pat'); if (pt) { sel = pt.dataset.k; if (playing && playing.kind === 'pat') { stopPlay(); playSelected(); } else drawRoll(); }
+});
+document.addEventListener('change', ev => {
+  const sel = ev.target.closest('[data-song-scene]');
+  if (!sel) return;
+  const p = DATA[cur], song = [...p.song], i = +sel.dataset.songScene;
+  song[i] = +sel.value;
+  applySong(song, `Song: position ${i + 1} now plays scene ${String(song[i]).padStart(2, '0')}`);
 });
 let dragKey = null;
 document.addEventListener('dragstart', ev => { const c = ev.target.closest && ev.target.closest('.pat'); if (!c) return; dragKey = c.dataset.k; ev.dataTransfer.setData('text/plain', dragKey); ev.dataTransfer.effectAllowed = 'move'; });
