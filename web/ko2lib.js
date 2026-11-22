@@ -287,7 +287,14 @@
       if (c.length < 6 || !(c[0] || c[1] || c[2] || c[3])) continue;
       scenes.push([i + 1, c[0], c[1], c[2], c[3]]);
     }
-    return { p: id, bpm, pads, pats, scenes };
+    // Song: byte 604 = active scene, byte 612 = number of song positions, 613.. = scene per position
+    let song = [], activeScene = null;
+    if (sc && sc.length >= 613) {
+      activeScene = sc[604] || null;
+      const n = Math.min(sc[612], 99, sc.length - 613);
+      for (let i = 0; i < n; i++) song.push(sc[613 + i]);
+    }
+    return { p: id, bpm, pads, pats, scenes, song, activeScene };
   }
 
   // Plays patterns on the device by sending timestamped MIDI notes.
@@ -300,20 +307,30 @@
 
     get playing() { return this.timer !== null; }
 
-    play(patterns, bpm) {
+    play(patterns, bpm) { return this.playSegments([patterns], bpm); }
+
+    // Plays a list of segments one after another and loops the whole list.
+    // A segment is a set of patterns played together (a scene); it lasts as long as its longest pattern.
+    playSegments(segments, bpm) {
       this.stop();
-      const loopBars = Math.max(1, ...patterns.map(p => p.bars || 1));
-      const loopTicks = loopBars * TICKS_PER_BAR;
       const events = [];
-      for (const p of patterns) {
-        const len = Math.max(1, p.bars) * TICKS_PER_BAR;
-        for (let off = 0; off < loopTicks; off += len) {
-          for (const [pad, pos, dur, vel] of p.ev) {
-            if (pos >= len) continue;
-            events.push({ t: off + pos, note: NOTE_BASE[p.g] + pad, vel: Math.max(1, Math.min(127, vel)), dur: Math.max(dur, 12) });
+      this.segmentStarts = [];
+      let segStart = 0;
+      for (const patterns of segments) {
+        const segTicks = Math.max(1, ...patterns.map(p => p.bars || 1)) * TICKS_PER_BAR;
+        this.segmentStarts.push(segStart);
+        for (const p of patterns) {
+          const len = Math.max(1, p.bars) * TICKS_PER_BAR;
+          for (let off = 0; off < segTicks; off += len) {
+            for (const [pad, pos, dur, vel] of p.ev) {
+              if (pos >= len) continue;
+              events.push({ t: segStart + off + pos, note: NOTE_BASE[p.g] + pad, vel: Math.max(1, Math.min(127, vel)), dur: Math.max(dur, 12) });
+            }
           }
         }
+        segStart += segTicks;
       }
+      const loopTicks = segStart;
       events.sort((a, b) => a.t - b.t);
       this.msPerTick = 60000 / ((bpm || 120) * 96);
       this.loopTicks = loopTicks;
@@ -338,7 +355,9 @@
       const frame = () => {
         if (!this.playing) return;
         const ticks = ((performance.now() - this.start) / this.msPerTick) % loopTicks;
-        this.onTick && this.onTick(Math.max(0, ticks) / loopTicks);
+        const tk = Math.max(0, ticks);
+        let seg = 0; while (seg + 1 < this.segmentStarts.length && this.segmentStarts[seg + 1] <= tk) seg++;
+        this.onTick && this.onTick(tk / loopTicks, seg);
         this.raf = requestAnimationFrame(frame);
       };
       this.raf = requestAnimationFrame(frame);
