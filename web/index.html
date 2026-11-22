@@ -90,6 +90,9 @@ td.dim{color:var(--muted)}
 .pos{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:5px;padding:5px 8px;background:var(--bg);display:flex;gap:6px;align-items:baseline}
 .pos .k{color:var(--muted);font-size:10px}
 .pos.now{border-color:var(--orange);box-shadow:inset 0 0 0 1px var(--orange)}
+.note.hit{background:var(--ink);box-shadow:0 0 0 2px var(--gc);opacity:1!important}
+.pill.live{display:inline-block;font:500 11px var(--mono);padding:2px 8px;border-radius:999px;border:1px solid var(--orange);color:var(--orange)}
+.pill.live[hidden]{display:none}
 .rollgrid.editing .lane{cursor:crosshair}
 .rollgrid.editing .note{cursor:grab;touch-action:none}
 .rollgrid.editing .note::after{content:"";position:absolute;right:0;top:0;bottom:0;width:6px;cursor:ew-resize}
@@ -168,7 +171,9 @@ const { KO2, Player, untar, parseProject, movePattern, setSong, deletePatterns, 
 const GC = { A:'var(--a)', B:'var(--b)', C:'var(--c)', D:'var(--d)' };
 const TPB = 384;
 const $ = s => document.querySelector(s);
-const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null, selScene = null, focusSel = null, libOpen = false, editMode = false, noteSel = -1; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
+const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null, selScene = null, focusSel = null, libOpen = false, editMode = false, noteSel = -1;
+// Following the K.O. II's own playback via its MIDI clock (24 per quarter note) and start/stop.
+const follow = { running: false, clocks: 0, raf: 0, lastNote: 0 }; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
 let projDirNode = 2000, DATA = [], soundNames = {}, cur = 0, sel = null, dev = null, player = null, playing = null; // playing: {kind:'pat'|'scene', key}
 
 function status(t, err){ const s=$('#status'); s.textContent=t; s.classList.toggle('err', !!err); }
@@ -182,6 +187,7 @@ $('#connect').addEventListener('click', async () => {
     if (player) player.stop();
     dev = await KO2.connect();
     player = new Player(dev.output);
+    dev.onRealtime = onDeviceMidi;
     player.onTick = (f, seg) => { document.querySelectorAll('.pos').forEach((el, i) => el.classList.toggle('now', f != null && playing && playing.kind === 'song' && i === seg)); const g = document.querySelector('.rollgrid'); const ph = document.querySelector('.playhead'); if (!g || !ph) return; ph.hidden = f == null || !showHead(); if (f != null) g.style.setProperty('--ph', f); };
     const info = await dev.greet();
     $('#meta').innerHTML = `${info.product||'EP-133'} · OS ${info.os_version||'?'}<br>serial ${info.serial||'?'}`;
@@ -390,6 +396,7 @@ function drawRoll(){
   let h = `<div class="rollhead"><strong>${label(x)}</strong>
     <span class="stat"><b>${x.bars}</b> ${x.bars===1?'bar':'bars'}</span><span class="stat"><b>${x.notes}</b> notes</span><span class="stat"><b>${used.length}</b> pads</span>
     <button class="play" data-play="pat" data-k="${k}" aria-pressed="${isPlaying('pat', cur+':'+k)}" ${player && x.notes ? '' : 'disabled'} title="${player ? 'Play on the K.O. II (space)' : 'Connect the K.O. II first'}">${isPlaying('pat', cur+':'+k) ? '■ stop' : '▶ play'}</button>
+    <span class="pill live" id="followBadge" ${follow.running ? '' : 'hidden'}>● K.O. II playing</span>
     <button class="play" id="editToggle" aria-pressed="${editMode}">${editMode ? '✓ done editing' : '✎ edit notes'}</button>
     ${x.virtual ? '' : `<button class="play del" data-del="pattern" data-k="${k}" title="Delete this pattern (staged until you write)">✕ delete pattern</button>`}</div>`;
   if (editMode) {
@@ -628,6 +635,36 @@ function playScene(n, toggle){
 function pickScene(n){
   selScene = n; sel = null; noteSel = -1;
   if (playing && playing.kind === 'scene') playScene(n, false); else render();
+}
+function onDeviceMidi(d){
+  const st = d[0];
+  if (st === 0xFA) { follow.running = true; follow.clocks = 0; showFollow(); }
+  else if (st === 0xFB) { follow.running = true; showFollow(); }
+  else if (st === 0xFC) { follow.running = false; showFollow(); }
+  else if (st === 0xF2) { follow.clocks = ((d[2] << 7) | d[1]) * 6; }
+  else if (st === 0xF8) { if (follow.running) { follow.clocks++; scheduleFollowFrame(); } }
+  else if ((st & 0xF0) === 0x90 && d[2] > 0) { follow.lastNote = performance.now(); }
+}
+function scheduleFollowFrame(){ if (!follow.raf) follow.raf = requestAnimationFrame(() => { follow.raf = 0; drawFollow(); }); }
+function showFollow(){
+  const b = $('#followBadge'); if (b) b.hidden = !follow.running;
+  if (!follow.running) {
+    document.querySelectorAll('.note.hit').forEach(n => n.classList.remove('hit'));
+    const ph = document.querySelector('.playhead'); if (ph && !playing) ph.hidden = true;
+  }
+}
+// Move the playhead and light up the notes under it while the K.O. II plays.
+function drawFollow(){
+  if (!follow.running || playing) return;
+  const p = DATA[cur]; if (!p) return;
+  const x = rollPattern(p); const g = document.querySelector('.rollgrid'), ph = document.querySelector('.playhead');
+  if (!x || !g || !ph) return;
+  const len = Math.max(1, x.bars) * TPB, t = (follow.clocks * 4) % len;
+  ph.hidden = false; g.style.setProperty('--ph', t / len);
+  document.querySelectorAll('.rollgrid .note').forEach(n => {
+    const e = x.ev[+n.dataset.ni]; if (!e) return;
+    n.classList.toggle('hit', t >= e[1] && t < e[1] + Math.max(e[2], 24));
+  });
 }
 function isPlaying(kind, key){ return !!playing && playing.kind === kind && playing.key === key; }
 function showHead(){ return playing && playing.kind === 'pat' && playing.key === cur + ':' + sel; }

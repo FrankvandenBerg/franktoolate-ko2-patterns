@@ -51,6 +51,7 @@
     close() { this.input.removeEventListener('midimessage', this.onMidi); }
 
     _handle(d) {
+      if (d[0] !== 0xf0) { this.onRealtime && this.onRealtime(d); return; }
       if (d[0] !== 0xf0 || d[1] !== TE[0] || d[2] !== TE[1] || d[3] !== TE[2] || d[5] !== 0x40) return;
       if (d[6] & 0x40) return; // a request, not a response
       const rid = ((d[6] & 0x1f) << 7) | (d[7] & 0x7f);
