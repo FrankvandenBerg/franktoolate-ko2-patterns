@@ -175,7 +175,7 @@ const $ = s => document.querySelector(s);
 const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null, selScene = null, focusSel = null, libOpen = false, editGroup = null, noteSel = -1;
 const openRolls = new Set(); let rollsTouched = false;
 // Following the K.O. II's own playback via its MIDI clock (24 per quarter note) and start/stop.
-const follow = { running: false, clocks: 0, raf: 0, lastNote: 0 }; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
+const follow = { running: false, clocks: 0, raf: 0, lastNote: 0, heard: [], followScenes: true, guess: null }; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
 let projDirNode = 2000, DATA = [], soundNames = {}, cur = 0, sel = null, dev = null, player = null, playing = null; // playing: {kind:'pat'|'scene', key}
 
 function status(t, err){ const s=$('#status'); s.textContent=t; s.classList.toggle('err', !!err); }
@@ -275,7 +275,7 @@ function render(){
   } else {
     const fdesc = !focusSel ? '' : focusSel.kind === 'scene' ? `scene ${pad2(focusSel.n)}` : (() => { const x = p.pats.find(q => q.g + q.n === focusSel.k); return x ? `pattern ${label(x)}` : ''; })();
     h += `<div class="hint" role="status">${fdesc ? `Selected: <b>${fdesc}</b>. Press <kbd>Delete</kbd> to remove it${focusSel.kind === 'scene' ? ' (<kbd>Shift</kbd>+<kbd>Delete</kbd> also deletes the patterns only this scene uses)' : ''}, <kbd>Esc</kbd> to deselect.` : 'Click a scene or a pattern to select it, then press <kbd>Delete</kbd> to remove it.'}</div>`;
-    h += `<h3>Scenes</h3><div class="scenes">` + p.scenes.map(sc => {
+    h += `<div class="ph"><h3>Scenes</h3>${dev ? `<label class="check" style="font-size:12px;color:var(--muted)"><input type="checkbox" id="followScenes" ${follow.followScenes ? 'checked' : ''}> follow the scene playing on the K.O. II</label>` : ''}</div><div class="scenes">` + p.scenes.map(sc => {
       const n = sc[0], parts = sceneParts(p, n), bars = Math.max(1, ...parts.map(q => q.bars || 1)), notes = parts.reduce((a, q) => a + q.notes, 0);
       const inSong = p.song.includes(n);
       return `<button class="scn${focusSel && focusSel.kind === 'scene' && focusSel.n === n ? ' focus' : ''}" data-pick-scene="${n}" aria-pressed="${n === selScene}"><b>${pad2(n)}</b><small>${bars}b · ${notes}n${inSong ? ' · song' : ''}</small></button>`;
@@ -675,12 +675,69 @@ async function openOnDevice(){
 }
 function onDeviceMidi(d){
   const st = d[0];
-  if (st === 0xFA) { follow.running = true; follow.clocks = 0; showFollow(); }
-  else if (st === 0xFB) { follow.running = true; showFollow(); }
+  if (st === 0xFA) { follow.running = true; follow.clocks = 0; follow.heard = []; showFollow(); }
+  else if (st === 0xFB) { follow.running = true; follow.heard = []; showFollow(); }
   else if (st === 0xFC) { follow.running = false; showFollow(); }
   else if (st === 0xF2) { follow.clocks = ((d[2] << 7) | d[1]) * 6; }
   else if (st === 0xF8) { if (follow.running) { follow.clocks++; scheduleFollowFrame(); } }
-  else if ((st & 0xF0) === 0x90 && d[2] > 0) { follow.lastNote = performance.now(); }
+  else if ((st & 0xF0) === 0x90 && d[2] > 0) { follow.lastNote = performance.now(); if (follow.running) heardNote(d[1]); }
+}
+// Scene bridge: the K.O. II does not say which scene it plays, but it sends every note it plays
+// (with its pitch) in time with its clock. Compare the last notes with what each scene would play
+// at those positions and select the scene that explains them.
+const sceneIndexCache = new WeakMap();
+function sceneIndex(p){
+  let idx = sceneIndexCache.get(p);
+  if (idx) return idx;
+  idx = p.scenes.map(sc => ({ n: sc[0], parts: sceneParts(p, sc[0]).filter(q => q.notes).map(q => ({ len: Math.max(1, q.bars) * TPB, ev: q.ev, g: q.g })) }));
+  sceneIndexCache.set(p, idx);
+  return idx;
+}
+// Score how well a scene matches the heard notes: notes it explains (recall) and,
+// in the same stretch of time, how many of its own notes were actually heard (precision).
+function sceneScore(scene, heard){
+  if (!heard.length) return 0;
+  const near = (a, b, len) => { let d = Math.abs(a - b); if (len) d = Math.min(d, len - d); return d <= 14; };
+  let explained = 0;
+  for (const h of heard) {
+    if (scene.parts.some(part => part.ev.some(e => e[4] === h.pitch && near(h.t % part.len, e[1], part.len)))) explained++;
+  }
+  const t0 = heard[0].t, t1 = heard[heard.length - 1].t;
+  let predicted = 0, hit = 0;
+  for (const part of scene.parts) {
+    for (const e of part.ev) {
+      for (let t = e[1] + Math.floor((t0 - e[1]) / part.len) * part.len; t <= t1; t += part.len) {
+        if (t < t0 - 2) continue;
+        predicted++;
+        if (heard.some(h => h.pitch === e[4] && near(h.t, t))) hit++;
+      }
+    }
+  }
+  const recall = explained / heard.length, precision = predicted ? hit / predicted : 0;
+  return recall + precision ? 2 * recall * precision / (recall + precision) : 0;
+}
+function heardNote(pitch){
+  const t = follow.clocks * 4;
+  follow.heard.push({ pitch, t });
+  // keep the last four bars of notes
+  follow.heard = follow.heard.filter(h => t - h.t <= 4 * TPB).slice(-200);
+  if (!follow.followScenes || follow.heard.length < 5) return;
+  const p = DATA[cur]; if (!p) return;
+  const scored = sceneIndex(p).map(sc => ({ n: sc.n, score: sceneScore(sc, follow.heard) }));
+  scored.sort((a, b) => b.score - a.score);
+  const best = scored[0]; if (!best || best.score < 0.8) return;
+  const tied = scored.filter(x => best.score - x.score < 0.02).map(x => x.n);
+  if (tied.includes(selScene)) { follow.guess = selScene; return; }   // current choice still fits: keep it
+  // Scenes with the same audible patterns sound identical: treat them as one and take the lowest number.
+  // (compare what they play, not their pattern numbers: copies of a pattern sound the same)
+  const sig = n => sceneParts(p, n).filter(q => q.notes).map(q => q.g + ':' + q.bars + ':' + q.ev.map(e => e[1] + '/' + e[4]).sort().join(',')).sort().join('|');
+  if (new Set(tied.map(sig)).size > 1) return;                      // not sure yet
+  best.n = Math.min(...tied);
+  follow.guess = best.n;
+  if (editGroup) return;                                             // don't jump away while editing notes
+  selScene = best.n; sel = null; noteSel = -1;
+  status(`The K.O. II is playing scene ${String(best.n).padStart(2, '0')}; the tool follows.`);
+  render();
 }
 function scheduleFollowFrame(){ if (!follow.raf) follow.raf = requestAnimationFrame(() => { follow.raf = 0; drawFollow(); }); }
 function showFollow(){
@@ -780,6 +837,7 @@ document.addEventListener('click', ev => {
 });
 document.addEventListener('toggle', ev => { if (ev.target.matches && ev.target.matches('details.lib')) libOpen = ev.target.open; }, true);
 document.addEventListener('change', ev => {
+  if (ev.target.id === 'followScenes') { follow.followScenes = ev.target.checked; follow.heard = []; return; }
   if (ev.target.id === 'edVel' || ev.target.id === 'edLen' || ev.target.id === 'edBars') {
     const x = editPattern(); if (!x) return;
     if (ev.target.id === 'edBars') { const b = Math.max(1, Math.min(99, Math.round(+ev.target.value || 1))); commitNotes(x, x.ev, b); return; }
