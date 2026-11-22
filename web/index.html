@@ -90,6 +90,19 @@ td.dim{color:var(--muted)}
 .pos{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:5px;padding:5px 8px;background:var(--bg);display:flex;gap:6px;align-items:baseline}
 .pos .k{color:var(--muted);font-size:10px}
 .pos.now{border-color:var(--orange);box-shadow:inset 0 0 0 1px var(--orange)}
+.mixer{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.ch{border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;align-items:stretch;background:var(--bg)}
+.ch .top{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.ch .gl{width:28px;height:28px;font-size:13px}
+.ch .pt{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.ch .btns{display:flex;gap:6px}
+.ch button{flex:1;font:inherit;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid var(--line);border-radius:5px;padding:6px 4px;background:var(--panel);color:var(--ink)}
+.ch button.on{background:var(--gc);border-color:var(--gc);color:#fff}
+.ch button.solo[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.ch.off{opacity:.5}
+@media (max-width:560px){.mixer{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.del{color:var(--muted)}
+.del:hover{color:#c42;border-color:#c42}
 .pos select{font:inherit;font-size:12px;padding:1px 2px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--ink)}
 .pos button{font:inherit;font-size:11px;line-height:1;cursor:pointer;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--ink);padding:3px 5px}
 .pos button:disabled{opacity:.35;cursor:default}
@@ -114,15 +127,16 @@ td.dim{color:var(--muted)}
   <p class="intro" id="intro">Reading is read-only: the projects are requested over MIDI and nothing on the sampler changes until you choose to write.</p>
   <nav class="projects" id="projects" aria-label="Projects" hidden></nav>
   <section class="card" id="project" hidden></section>
-  <p class="foot">Patterns are numbered 01–99 per group (A–D), as in the Teenage Engineering guide. "b" is the pattern length in bars (1 bar = 384 ticks at 96 ppqn), "n" the number of notes. Pad numbers 1–12 are the internal order, not the labels printed on the pads. Left/right arrows switch pattern, keys 1–9 switch project, space plays or stops. Moving: drag a pattern onto another pattern to swap them, or onto a group to move it there; within a group, scenes follow along. Playback sends MIDI notes to the sampler (group A = notes 36–47, B = 48–59, C = 60–71, D = 72–83); do not leave the K.O. II in record mode, or the notes will be recorded. Pads in keys mode play at their root note.</p>
+  <p class="foot">Patterns are numbered 01–99 per group (A–D), as in the Teenage Engineering guide. "b" is the pattern length in bars (1 bar = 384 ticks at 96 ppqn), "n" the number of notes. Pad numbers 1–12 are the internal order, not the labels printed on the pads. Left/right arrows switch pattern, keys 1–9 switch project, space plays or stops. Moving: drag a pattern onto another pattern to swap them, or onto a group to move it there; within a group, scenes follow along. Deleting a pattern leaves its group silent in scenes that used it; clearing a scene also removes it from the song. Playback sends MIDI notes to the sampler (group A = notes 36–47, B = 48–59, C = 60–71, D = 72–83); do not leave the K.O. II in record mode, or the notes will be recorded. Pads in keys mode play at their root note.</p>
 </div>
 
 <script src="ko2lib.js"></script>
 <script>
-const { KO2, Player, untar, parseProject, movePattern, setSong } = window.KO2Lib;
+const { KO2, Player, untar, parseProject, movePattern, setSong, deletePatterns, deleteScenes } = window.KO2Lib;
 const GC = { A:'var(--a)', B:'var(--b)', C:'var(--c)', D:'var(--d)' };
 const TPB = 384;
 const $ = s => document.querySelector(s);
+const mixer = { A: true, B: true, C: true, D: true }; let soloGroup = null;
 let projDirNode = 2000, DATA = [], soundNames = {}, cur = 0, sel = null, dev = null, player = null, playing = null; // playing: {kind:'pat'|'scene', key}
 
 function status(t, err){ const s=$('#status'); s.textContent=t; s.classList.toggle('err', !!err); }
@@ -231,6 +245,7 @@ function render(){
     }
     h += `<div class="roll" id="roll"></div>`;
   }
+  h += `<h3>Mixer</h3><div class="mixer" id="mixer"></div><p class="foot">Switch groups on and off while a pattern, scene or song plays (keys A, B, C, D; S + key for solo). This only changes what the tool plays; nothing is written to the K.O. II.</p>`;
   if (p.scenes.length) {
     const rows = [], sc = p.scenes;
     for (let i = 0; i < sc.length; i++) {
@@ -241,14 +256,33 @@ function render(){
     const has = (g, n) => p.pats.some(x => x.g === g && x.n === n && x.notes);
     const pad2 = n => String(n).padStart(2, '0');
     h += `<h3>Scenes</h3><div class="tbl"><table><thead><tr><th>scene</th><th>A</th><th>B</th><th>C</th><th>D</th><th></th></tr></thead><tbody>`;
-    h += rows.map(r => `<tr><td>${r.from===r.to ? pad2(r.from) : pad2(r.from)+'–'+pad2(r.to)}</td>${r.v.map((n,gi)=>`<td class="${has('ABCD'[gi],n)?'':'dim'}">${pad2(n)}</td>`).join('')}<td><button class="play" data-play="scene" data-v="${r.v.join(',')}" aria-pressed="${isPlaying('scene', cur+':'+r.v.join(','))}" ${player ? '' : 'disabled'}>${isPlaying('scene', cur+':'+r.v.join(',')) ? '■' : '▶'}</button></td></tr>`).join('');
+    h += rows.map(r => `<tr><td>${r.from===r.to ? pad2(r.from) : pad2(r.from)+'–'+pad2(r.to)}</td>${r.v.map((n,gi)=>`<td class="${has('ABCD'[gi],n)?'':'dim'}">${pad2(n)}</td>`).join('')}<td><button class="play" data-play="scene" data-v="${r.v.join(',')}" aria-pressed="${isPlaying('scene', cur+':'+r.v.join(','))}" ${player ? '' : 'disabled'}>${isPlaying('scene', cur+':'+r.v.join(',')) ? '■' : '▶'}</button>
+      <button class="play del" data-del="scene" data-from="${r.from}" data-to="${r.to}" title="Clear ${r.from===r.to ? 'this scene' : 'these scenes'}; its patterns stay">✕ scene</button>
+      <button class="play del" data-del="scene-patterns" data-from="${r.from}" data-to="${r.to}" title="Clear ${r.from===r.to ? 'this scene' : 'these scenes'} and delete the patterns no other scene uses">✕ scene + patterns</button></td></tr>`).join('');
     h += `</tbody></table></div><p class="foot">Grey numbers point to a pattern without notes: that group is silent in that scene.</p>`;
   }
   h += songHtml(p);
   card.innerHTML = h;
   drawRoll();
+  drawMixer();
 }
 
+function groupAudible(g){ return soloGroup ? soloGroup === g : mixer[g]; }
+function applyMixer(){ if (player) for (const g of 'ABCD') player.setMuted(g, !groupAudible(g)); drawMixer(); }
+function drawMixer(){
+  const el = $('#mixer'); if (!el) return;
+  const p = DATA[cur];
+  let now = {};
+  if (playing && playing.kind === 'scene') { const v = playing.key.split(':')[1].split(',').map(Number); 'ABCD'.split('').forEach((g, i) => now[g] = v[i]); }
+  else if (playing && playing.kind === 'pat') { const x = p.pats.find(q => cur + ':' + q.g + q.n === playing.key); if (x) now[x.g] = x.n; }
+  el.innerHTML = 'ABCD'.split('').map(g => {
+    const pat = now[g] ? p.pats.find(q => q.g === g && q.n === now[g]) : null;
+    const info = now[g] ? `${g}${String(now[g]).padStart(2, '0')}${pat && pat.notes ? '' : ' (empty)'}` : (playing ? '–' : 'not playing');
+    return `<div class="ch${groupAudible(g) ? '' : ' off'}" style="--gc:${GC[g]}"><div class="top"><div class="gl" style="background:${GC[g]}">${g}</div><span class="pt">${info}</span></div>
+      <div class="btns"><button data-mix="${g}" class="${mixer[g] ? 'on' : ''}" aria-pressed="${mixer[g]}" title="Group ${g} on/off (key ${g.toLowerCase()})">${mixer[g] ? 'on' : 'off'}</button>
+      <button data-solo="${g}" class="solo" aria-pressed="${soloGroup === g}" title="Solo group ${g}">solo</button></div></div>`;
+  }).join('');
+}
 function sceneParts(p, sceneNo){
   const sc = p.scenes.find(s => s[0] === sceneNo);
   if (!sc) return [];
@@ -292,7 +326,8 @@ function drawRoll(){
   const pads = [...new Set(x.ev.map(e => e[0]))].sort((a, b) => a - b);
   let h = `<div class="rollhead"><strong>${x.g}${String(x.n).padStart(2,'0')}</strong>
     <span class="stat"><b>${x.bars}</b> ${x.bars===1?'bar':'bars'}</span><span class="stat"><b>${x.notes}</b> notes</span><span class="stat"><b>${pads.length}</b> pads</span>
-    <button class="play" data-play="pat" data-k="${x.g+x.n}" aria-pressed="${isPlaying('pat', cur+':'+x.g+x.n)}" ${player && x.notes ? '' : 'disabled'} title="${player ? 'Play on the K.O. II (space)' : 'Connect the K.O. II first'}">${isPlaying('pat', cur+':'+x.g+x.n) ? '■ stop' : '▶ play'}</button></div>`;
+    <button class="play" data-play="pat" data-k="${x.g+x.n}" aria-pressed="${isPlaying('pat', cur+':'+x.g+x.n)}" ${player && x.notes ? '' : 'disabled'} title="${player ? 'Play on the K.O. II (space)' : 'Connect the K.O. II first'}">${isPlaying('pat', cur+':'+x.g+x.n) ? '■ stop' : '▶ play'}</button>
+    <button class="play del" data-del="pattern" data-k="${x.g+x.n}" title="Delete this pattern (staged until you write)">✕ delete pattern</button></div>`;
   if (!x.notes) { el.innerHTML = h + `<p class="none">This pattern exists but contains no notes.</p>`; return; }
   h += `<div class="rollscroll"><div class="rollgrid" style="--gc:${GC[x.g]}"><div class="playhead" hidden></div><div class="lab" style="height:18px"></div><div class="ruler">`;
   for (let b = 0; b < bars; b++) h += `<span style="left:${b/bars*100}%">${b+1}</span>`;
@@ -395,6 +430,7 @@ function togglePlay(kind, key, pats){
   if (isPlaying(kind, key)) { stopPlay(); render(); return; }
   stopPlay();
   playing = { kind, key };
+  applyMixer();
   player.play(pats, DATA[cur].bpm);
   render();
 }
@@ -407,6 +443,38 @@ document.addEventListener('click', ev => {
   if (ev.target.closest('#writeProj')) { writeProject(); return; }
   if (ev.target.closest('#dlProj')) { saveFile(DATA[cur].tar, `KO2-P${DATA[cur].p}-edited-${stamp()}.tar`); return; }
   if (ev.target.closest('#undoProj')) { stopPlay(); const p = DATA[cur]; DATA[cur] = makeProject(p.p, p.orig, p.node); sel = null; status('Changes undone.'); render(); return; }
+  const mx = ev.target.closest('[data-mix]');
+  if (mx) { const g = mx.dataset.mix; mixer[g] = !mixer[g]; applyMixer(); return; }
+  const so = ev.target.closest('[data-solo]');
+  if (so) { const g = so.dataset.solo; soloGroup = soloGroup === g ? null : g; applyMixer(); return; }
+  const db = ev.target.closest('[data-del]');
+  if (db) {
+    const p = DATA[cur];
+    stopPlay();
+    try {
+      let tar, msg;
+      if (db.dataset.del === 'pattern') {
+        const x = p.pats.find(q => q.g + q.n === db.dataset.k);
+        tar = deletePatterns(p.tar, [x]);
+        const inScenes = p.scenes.filter(sc => sc['ABCD'.indexOf(x.g) + 1] === x.n).map(sc => sc[0]);
+        msg = `Deleted pattern ${label(x)}` + (inScenes.length ? ` (group ${x.g} is now silent in scene ${inScenes.join(', ')})` : '');
+        sel = null;
+      } else {
+        const from = +db.dataset.from, to = +db.dataset.to, nos = [];
+        for (let n = from; n <= to; n++) nos.push(n);
+        const r = deleteScenes(p.tar, nos, db.dataset.del === 'scene-patterns');
+        tar = r.tar;
+        const inSong = p.song.filter(n => nos.includes(n)).length;
+        msg = `Cleared scene ${from === to ? String(from).padStart(2, '0') : String(from).padStart(2, '0') + '–' + String(to).padStart(2, '0')}`
+          + (r.deletedPatterns.length ? `, deleted patterns ${r.deletedPatterns.map(label).join(', ')}` : '')
+          + (inSong ? `, removed ${inSong} song position${inSong === 1 ? '' : 's'}` : '');
+      }
+      DATA[cur] = { ...parseProject(p.p, untar(tar)), tar, orig: p.orig, node: p.node, changes: [...p.changes, msg] };
+      status(msg + '. Not written yet.');
+      render();
+    } catch (e) { status(e.message || String(e), true); }
+    return;
+  }
   const sb = ev.target.closest('[data-song]');
   if (sb && !sb.disabled) {
     const p = DATA[cur], song = [...p.song], i = +sb.dataset.i, act = sb.dataset.song;
@@ -421,7 +489,7 @@ document.addEventListener('click', ev => {
     else if (pl.dataset.play === 'song') {
       const p = DATA[cur];
       if (isPlaying('song', String(cur))) { stopPlay(); render(); }
-      else { stopPlay(); playing = { kind: 'song', key: String(cur) }; player.playSegments(p.song.map(n => sceneParts(p, n)), p.bpm); render(); }
+      else { stopPlay(); playing = { kind: 'song', key: String(cur) }; applyMixer(); player.playSegments(p.song.map(n => sceneParts(p, n)), p.bpm); render(); }
     }
     else {
       const v = pl.dataset.v.split(',').map(Number);
@@ -440,6 +508,10 @@ document.addEventListener('change', ev => {
   song[i] = +sel.value;
   applySong(song, `Song: position ${i + 1} now plays scene ${String(song[i]).padStart(2, '0')}`);
 });
+let soloKey = false;
+document.addEventListener('keydown', ev => { if (ev.key === 's' || ev.key === 'S') soloKey = true; });
+document.addEventListener('keyup', ev => { if (ev.key === 's' || ev.key === 'S') soloKey = false; });
+window.addEventListener('blur', () => { soloKey = false; });
 let dragKey = null;
 document.addEventListener('dragstart', ev => { const c = ev.target.closest && ev.target.closest('.pat'); if (!c) return; dragKey = c.dataset.k; ev.dataTransfer.setData('text/plain', dragKey); ev.dataTransfer.effectAllowed = 'move'; });
 document.addEventListener('dragend', () => { dragKey = null; document.querySelectorAll('.drop').forEach(e => e.classList.remove('drop')); });
@@ -469,6 +541,11 @@ document.addEventListener('drop', ev => {
 });
 document.addEventListener('keydown', ev => {
   if (!DATA.length || ev.target.closest('input,select')) return;
+  if (/^[abcd]$/i.test(ev.key) && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
+    const g = ev.key.toUpperCase();
+    if (soloKey) soloGroup = soloGroup === g ? null : g; else mixer[g] = !mixer[g];
+    applyMixer(); ev.preventDefault(); return;
+  }
   if (ev.key === ' ' && !ev.target.closest('button')) { ev.preventDefault(); if (playing) { stopPlay(); render(); } else playSelected(); return; }
   if (/^[1-9]$/.test(ev.key) && DATA[+ev.key - 1]) { stopPlay(); cur = +ev.key - 1; sel = null; render(); }
   if (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') {

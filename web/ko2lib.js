@@ -259,6 +259,51 @@
     return { tar: buildTar(ordered), changed: true, swapped };
   }
 
+  const patKey = (g, n) => `patterns/${g.toLowerCase()}${String(n).padStart(2, '0')}`;
+
+  // Delete pattern files. Scenes keep pointing at the number; that group is then silent there.
+  function deletePatterns(tarBuf, list) {
+    const keys = new Set(list.map(p => patKey(p.g, p.n)));
+    const entries = tarEntries(tarBuf).filter(e => !keys.has(e.name));
+    return buildTar(entries);
+  }
+
+  // Clear scenes (1–99). Song positions that used them are removed; the active scene moves to one that remains.
+  // With withPatterns, pattern files used only by the deleted scenes are deleted too.
+  function deleteScenes(tarBuf, sceneNos, withPatterns) {
+    const entries = tarEntries(tarBuf);
+    const sc = entries.find(e => e.name === 'scenes');
+    if (!sc) throw new Error('This project has no scenes file.');
+    const d = new Uint8Array(sc.data);
+    const del = new Set(sceneNos);
+    const chunk = n => d.subarray(7 + (n - 1) * 6, 7 + (n - 1) * 6 + 4);
+    const used = n => { const c = chunk(n); return c[0] || c[1] || c[2] || c[3]; };
+    const doomed = [];
+    if (withPatterns) {
+      for (const n of del) {
+        if (!used(n)) continue;
+        chunk(n).forEach((pn, gi) => {
+          if (!pn) return;
+          let shared = false;
+          for (let m = 1; m <= 99; m++) if (!del.has(m) && used(m) && chunk(m)[gi] === pn) shared = true;
+          if (!shared) doomed.push({ g: 'ABCD'[gi], n: pn });
+        });
+      }
+    }
+    for (const n of del) chunk(n).fill(0);
+    const remaining = []; for (let m = 1; m <= 99; m++) if (used(m)) remaining.push(m);
+    if (d.length >= 712) {
+      const song = []; for (let i = 0; i < d[612]; i++) song.push(d[613 + i]);
+      let kept = song.filter(n => !del.has(n));
+      if (!kept.length) kept = [remaining[0] || 1];
+      d[612] = kept.length; d.fill(0, 613, 712); kept.forEach((n, i) => { d[613 + i] = n; });
+      if (del.has(d[604])) d[604] = remaining[0] || 1;
+    }
+    sc.data = d;
+    const keys = new Set(doomed.map(p => patKey(p.g, p.n)));
+    return { tar: buildTar(entries.filter(e => !keys.has(e.name))), deletedPatterns: doomed };
+  }
+
   // Replace the song list (scene number per position, 1–99 positions) in a project archive.
   function setSong(tarBuf, positions) {
     const entries = tarEntries(tarBuf);
@@ -318,7 +363,16 @@
   const TICKS_PER_BAR = 384; // 96 ppqn, 4/4
 
   class Player {
-    constructor(output) { this.output = output; this.timer = null; this.onTick = null; }
+    constructor(output) { this.output = output; this.timer = null; this.onTick = null; this.muted = new Set(); }
+
+    // Mixer: silence a group (A–D) while playing. Only affects what the tool sends; nothing is stored on the device.
+    setMuted(group, muted) {
+      if (muted) {
+        this.muted.add(group);
+        const base = NOTE_BASE[group];
+        for (let n = base; n < base + 12; n++) this.output.send([0x80, n, 0]);
+      } else this.muted.delete(group);
+    }
 
     get playing() { return this.timer !== null; }
 
@@ -339,7 +393,7 @@
           for (let off = 0; off < segTicks; off += len) {
             for (const [pad, pos, dur, vel] of p.ev) {
               if (pos >= len) continue;
-              events.push({ t: segStart + off + pos, note: NOTE_BASE[p.g] + pad, vel: Math.max(1, Math.min(127, vel)), dur: Math.max(dur, 12) });
+              events.push({ t: segStart + off + pos, g: p.g, note: NOTE_BASE[p.g] + pad, vel: Math.max(1, Math.min(127, vel)), dur: Math.max(dur, 12) });
             }
           }
         }
@@ -360,8 +414,10 @@
           const e = events[this.idx];
           const at = this.start + (this.loop * loopTicks + e.t) * this.msPerTick;
           if (at > horizon) break;
-          this.output.send([0x90, e.note, e.vel], at);
-          this.output.send([0x80, e.note, 0], at + e.dur * this.msPerTick);
+          if (!this.muted.has(e.g)) {
+            this.output.send([0x90, e.note, e.vel], at);
+            this.output.send([0x80, e.note, 0], at + e.dur * this.msPerTick);
+          }
           if (++this.idx >= events.length) { this.idx = 0; this.loop++; }
         }
       };
@@ -387,6 +443,6 @@
     }
   }
 
-  const api = { KO2, Player, untar, parseProject, pack7, unpack7, tarEntries, buildTar, movePattern, setSong };
+  const api = { KO2, Player, untar, parseProject, pack7, unpack7, tarEntries, buildTar, movePattern, setSong, deletePatterns, deleteScenes };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KO2Lib = api;
 })(typeof window !== 'undefined' ? window : globalThis);
