@@ -451,8 +451,15 @@
       const events = [];
       this.segmentStarts = [];
       let segStart = 0;
+      const gcd = (a, b) => b ? gcd(b, a % b) : a;
       for (const patterns of segments) {
-        const segTicks = Math.max(1, ...patterns.map(p => p.bars || 1)) * TICKS_PER_BAR;
+        let segTicks = Math.max(1, ...patterns.map(p => p.bars || 1)) * TICKS_PER_BAR;
+        // A single scene loops like on the device: every pattern repeats at its own length
+        // (a 3-bar and a 4-bar pattern meet again after 12 bars). Capped to keep the event list small.
+        if (segments.length === 1) {
+          const l = patterns.reduce((acc, p) => { const len = Math.max(1, p.bars || 1); return acc * len / gcd(acc, len); }, 1);
+          if (l <= 64) segTicks = l * TICKS_PER_BAR;
+        }
         this.segmentStarts.push(segStart);
         for (const p of patterns) {
           const len = Math.max(1, p.bars) * TICKS_PER_BAR;
