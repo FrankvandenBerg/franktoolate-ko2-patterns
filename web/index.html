@@ -1223,6 +1223,7 @@ function showSyncing(kind){
 function onDeviceMidi(d){
   const st = d[0];
   if ((st === 0xFA || st === 0xFB) && dev) dev.abortGet = true;   // stop any background read right away
+  if ((st === 0xFA || st === 0xFB) && playing) { stopPlay(); render(); }   // the K.O. II takes over: stop the tool's own playback
   if (st === 0xFA) { follow.running = true; follow.clocks = 0; follow.heard = []; follow.unexplained = 0; songTrackFromSpp(); showFollow(); }
   else if (st === 0xFB) { follow.running = true; follow.heard = []; follow.unexplained = 0; showFollow(); }
   else if (st === 0xFC) {
