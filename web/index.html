@@ -1225,7 +1225,9 @@ function scenePitches(p, n){
 function songTrackBar(){
   const p = DATA[cur]; if (!p || p.song.length < 2 || songTrack.ended) return;
   const heard = songTrack.bar; songTrack.bar = [];
-  if (follow.clocks - songTrack.lastNoteClock > 2 * 96) { songTrack.ended = true; updateSongProgress(null); return; }
+  // End of song: the device sends no stop. In the last position one silent bar is enough, elsewhere two.
+  const lastPos = songTrack.pos === p.song.length - 1;
+  if (follow.clocks - songTrack.lastNoteClock > (lastPos ? 1 : 2) * 96) { songTrack.ended = true; updateSongProgress(null); showFollow(); return; }
   const cur0 = p.song[songTrack.pos];
   // Same scene twice in a row sounds identical: move on by time once the position's length has passed.
   const lens = songLens(p), elapsed = (follow.clocks - songTrack.startClock) / 96;
@@ -1239,6 +1241,18 @@ function songTrackBar(){
     if (p.song[j] !== cur0 && fits(p.song[j]) >= 0.9) { songTrack.pos = j; songTrack.startClock = Math.floor(follow.clocks / 96) * 96 - 96; return; }
   }
 }
+// React on the first note that cannot come from the current position's scene but does belong to a coming one.
+function songTrackNote(pitch){
+  const p = DATA[cur]; if (!p || p.song.length < 2 || songTrack.ended) return;
+  const cur0 = p.song[songTrack.pos];
+  if (scenePitches(p, cur0).has(pitch)) return;
+  for (let j = songTrack.pos + 1; j < Math.min(p.song.length, songTrack.pos + 4); j++) {
+    if (p.song[j] !== cur0 && scenePitches(p, p.song[j]).has(pitch)) {
+      songTrack.pos = j; songTrack.startClock = Math.floor(follow.clocks / 96) * 96; songTrack.bar = [];
+      return;
+    }
+  }
+}
 function songTrackTicks(){
   const p = DATA[cur]; const lens = songLens(p);
   const start = lens.slice(0, songTrack.pos).reduce((a, b) => a + b, 0) * TPB;
@@ -1247,7 +1261,7 @@ function songTrackTicks(){
 }
 function heardNote(pitch){
   const t = follow.clocks * 4;
-  songTrack.lastNoteClock = follow.clocks; songTrack.bar.push(pitch);
+  songTrack.lastNoteClock = follow.clocks; songTrack.bar.push(pitch); songTrackNote(pitch);
   follow.heard.push({ pitch, t });
   // keep the last four bars of notes
   follow.heard = follow.heard.filter(h => t - h.t <= 4 * TPB).slice(-200);
