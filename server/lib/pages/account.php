@@ -14,6 +14,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $name = trim((string)($_POST['name'] ?? ''));
         if (mb_strlen($name) > 100) $err = 'Use a shorter name.';
         else { db()->prepare('UPDATE ko_users SET name = ? WHERE id = ?')->execute([$name, $me['id']]); $msg = 'Name saved.'; $me['name'] = $name; }
+    } elseif ($action === 'delete_account') {
+        if (empty($_POST['confirm'])) $err = 'Tick the box to confirm that you want to delete your account.';
+        elseif ($me['is_admin']) $err = 'Admin accounts cannot be deleted here. Make someone else admin first, or ask another admin.';
+        else {
+            delete_user_account((int)$me['id'], 'by the user');
+            $_SESSION = []; session_destroy();
+            page('Account deleted', '<div class="box narrow"><h1>Account <span>deleted</span></h1><p>Your account and everything stored for it (passkeys, backups, sound list, shared sounds and activity log) have been deleted. Remember to also remove the passkey from your device or password manager.</p><p><a href="' . h(url('register')) . '">Create a new account</a></p></div>');
+            exit;
+        }
     } elseif ($action === 'remove') {
         if (passkey_count((int)$me['id']) <= 1) $err = 'You cannot remove your last passkey. Add another one first.';
         else {
@@ -46,4 +55,11 @@ page('Account', '
 </form>
 <h2>Passkeys</h2>
 <div class="tbl"><table><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th></th></tr></thead><tbody>' . $rows . '</tbody></table></div>
-<p><a class="btn" href="' . h(url('passkey')) . '">Add a passkey for this device</a></p>');
+<p><a class="btn" href="' . h(url('passkey')) . '">Add a passkey for this device</a></p>
+<h2>Delete account</h2>
+<form method="post" action="' . h(url('account')) . '">' . csrf_field() . '
+  <input type="hidden" name="action" value="delete_account">
+  <p>This permanently deletes your account, passkeys, project backups, sound list, shared sounds and activity log. It cannot be undone. Sounds already on your K.O. II are not touched.</p>
+  <label class="check"><input type="checkbox" name="confirm" value="1" required> Yes, delete my account and all its data</label>
+  <button type="submit" class="sec">Delete my account</button>
+</form>');

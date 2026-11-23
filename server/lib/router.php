@@ -12,6 +12,16 @@ $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $route = trim(substr($path, strlen(base_path())), '/');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
+// Self-hosted fonts, public so the sign-in pages can use them too.
+if (preg_match('~^fonts/([a-z0-9-]+)\.woff2$~', $route, $fm)) {
+    $f = KO_HOME . '/lib/fonts/' . $fm[1] . '.woff2';
+    if (!is_file($f)) { http_response_code(404); exit('Not found'); }
+    header('Content-Type: font/woff2');
+    header('Cache-Control: public, max-age=31536000, immutable');
+    header('X-Content-Type-Options: nosniff');
+    readfile($f);
+    exit;
+}
 if (str_starts_with($route, 'passkey/')) {
     require KO_HOME . '/lib/pages/passkey_api.php';
     exit;
@@ -28,6 +38,8 @@ switch ($route) {
     case 'passkey':  require KO_HOME . '/lib/pages/passkey_setup.php'; exit;
     case 'setup':    require KO_HOME . '/lib/pages/setup.php'; exit;
     case 'account':  require KO_HOME . '/lib/pages/account.php'; exit;
+    case 'privacy': case 'terms': case 'about':
+        require KO_HOME . '/lib/pages/legal.php'; exit;
     case 'logout':
         if ($method === 'POST') {
             check_csrf();
@@ -223,6 +235,7 @@ function serve_app_file(array $u, string $file): void {
         . '<form method="post" action="' . h(url('logout')) . '">' . csrf_field() . '<button>Sign out</button></form></div></details>';
     $html = file_get_contents($full);
     $html = str_replace('<!--user-menu-->', $menu, $html);
+    $html = str_replace('<!--fonts-->', '<style>' . fonts_css() . '</style>', $html);
     if ($u['is_admin']) $html = str_replace('<!--admin-tab-->', '<a href="' . h(url('admin')) . '">Admin</a>', $html);
     $html = str_replace('</head>', '<meta name="csrf" content="' . h(csrf_token()) . '"><meta name="ko-base" content="' . h(base_path()) . '"></head>', $html);
     header('Content-Type: text/html; charset=utf-8');

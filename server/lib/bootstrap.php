@@ -124,7 +124,8 @@ function log_event(?int $uid, string $type, string $detail = ''): void {
     try {
         db()->prepare('INSERT INTO ko_events (user_id, type, detail, ip, created_at) VALUES (?, ?, ?, ?, ?)')
             ->execute([$uid, $type, mb_substr($detail, 0, 255), client_ip(), now()]);
-        if (random_int(1, 200) === 1) db()->prepare('DELETE FROM ko_events WHERE created_at < ?')->execute([ago(180 * 86400)]);
+        static $cleaned = false;
+        if (!$cleaned) { $cleaned = true; db()->prepare('DELETE FROM ko_events WHERE created_at < ?')->execute([ago(180 * 86400)]); }
     } catch (Throwable $e) { error_log('kostudio log_event: ' . $e->getMessage()); }
 }
 
@@ -222,6 +223,8 @@ function create_user(string $email, string $name, bool $admin, bool $verified): 
 
 /** Create a one-time token; returns the raw token for the link. */
 function make_token(int $uid, string $purpose, int $ttl): string {
+    // Used and expired sign-in links are kept at most a day.
+    db()->prepare('DELETE FROM ko_tokens WHERE expires_at < ? OR used_at < ?')->execute([ago(86400), ago(86400)]);
     $raw = b64u_enc(random_bytes(32));
     db()->prepare('INSERT INTO ko_tokens (user_id, purpose, token_hash, expires_at) VALUES (?, ?, ?, ?)')
         ->execute([$uid, $purpose, hash('sha256', $raw), gmdate('Y-m-d H:i:s', time() + $ttl)]);
@@ -277,11 +280,11 @@ function page(string $title, string $body, string $js = ''): void {
     echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">';
     echo '<meta name="csrf" content="' . h(csrf_token()) . '">';
     echo '<title>' . h($title) . ' · K.O. II Patterns</title>';
-    echo '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">';
+    echo '<style>' . fonts_css() . '</style>';
     echo '<style>' . file_get_contents(KO_HOME . '/lib/page.css') . '</style></head><body><main class="box">';
     echo $body;
     echo '</main>';
-    echo '<footer class="legal">K.O. II Patterns is an independent project, not affiliated with or endorsed by Teenage Engineering. · <a href="' . h((string)config('source_url', 'https://github.com/FrankvandenBerg/franktoolate-ko2-patterns')) . '" target="_blank" rel="noopener">Source code (AGPL-3.0)</a></footer>';
+    echo '<footer class="legal">K.O. II Patterns is an independent project, not affiliated with or endorsed by Teenage Engineering. · <a href="' . h(url('privacy')) . '">Privacy</a> · <a href="' . h(url('terms')) . '">Terms</a> · <a href="' . h(url('about')) . '">About</a> · <a href="' . h((string)config('source_url', 'https://github.com/FrankvandenBerg/franktoolate-ko2-patterns')) . '" target="_blank" rel="noopener">Source code (AGPL-3.0)</a></footer>';
     // Only the script a page needs ('login' or 'register'), comments and indentation stripped.
     if ($js === 'login' || $js === 'register') {
         $code = file_get_contents(KO_HOME . "/lib/passkey-$js.js");
@@ -290,4 +293,22 @@ function page(string $title, string $body, string $js = ''): void {
         echo '<script>window.KO_BASE=' . json_encode(base_path()) . ";\n" . $code . '</script>';
     }
     echo '</body></html>';
+}
+
+/** @font-face rules for the self-hosted fonts (served from /fonts/, no third party). */
+function fonts_css(): string {
+    $f = fn(string $family, string $file, int $w) => "@font-face{font-family:'$family';font-style:normal;font-weight:$w;font-display:swap;src:url(" . base_path() . "/fonts/$file.woff2) format('woff2')}";
+    return $f('Archivo', 'archivo-400', 400) . $f('Archivo', 'archivo-600', 600) . $f('Archivo', 'archivo-800', 800)
+        . $f('IBM Plex Mono', 'plexmono-400', 400) . $f('IBM Plex Mono', 'plexmono-500', 500);
+}
+
+/** Delete an account and everything stored for it: passkeys, tokens, backups, sound list, shared sounds and its activity log. */
+function delete_user_account(int $id, string $by): void {
+    $st = db()->prepare('SELECT id FROM ko_shared_sounds WHERE user_id = ?'); $st->execute([$id]);
+    foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $sid) @unlink(KO_HOME . "/data/shared/$sid.pcm");
+    foreach (['ko_passkeys', 'ko_tokens', 'ko_sound_cache', 'ko_backups', 'ko_shared_sounds', 'ko_events'] as $tbl) db()->prepare("DELETE FROM $tbl WHERE user_id = ?")->execute([$id]);
+    foreach (glob(KO_HOME . '/data/backups/' . $id . '/*.tar') ?: [] as $f) @unlink($f);
+    @rmdir(KO_HOME . '/data/backups/' . $id);
+    db()->prepare('DELETE FROM ko_users WHERE id = ?')->execute([$id]);
+    log_event(null, 'account_deleted', $by);
 }

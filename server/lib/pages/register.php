@@ -15,6 +15,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $done = true; // honeypot filled in: pretend it worked
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = 'Enter a valid email address.';
+    } elseif (empty($_POST['agree'])) {
+        $error = 'Please agree to the Terms to create an account.';
     } elseif (mb_strlen($name) > 100) {
         $error = 'Use a shorter name.';
     } elseif (rate_limited('mail', 5, 900)) {
@@ -52,6 +54,7 @@ page('Create account', $done ? '
     <label for="name">Name<input id="name" type="text" name="name" value="' . h($name) . '" autocomplete="name"></label>
     <label for="email">Email<input id="email" type="email" name="email" value="' . h($email) . '" autocomplete="email" required></label>
     <div style="position:absolute;left:-9999px" aria-hidden="true"><label for="website">Website<input id="website" type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
+    <label class="check"><input type="checkbox" name="agree" value="1" required> <span>I agree to the <a href="' . h(url('terms')) . '" target="_blank">Terms of use</a> and have read the <a href="' . h(url('privacy')) . '" target="_blank">Privacy policy</a>.</span></label>
     ' . ($error ? '<div class="err" role="alert">' . h($error) . '</div>' : '') . '
     <button type="submit">Send confirmation email</button>
   </form>

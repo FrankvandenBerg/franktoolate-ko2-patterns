@@ -57,3 +57,10 @@ button.link{background:none;border:0;padding:0;color:var(--ink);text-decoration:
 a{color:var(--ink)}
 .legal{max-width:720px;margin:32px auto 0;font-size:12px;color:var(--muted);text-align:center;line-height:1.6}
 .legal a{color:inherit}
+.legaltext{display:flex;flex-direction:column;gap:12px}
+.legaltext p{color:var(--ink);line-height:1.6}
+.legaltext p.mono{color:var(--muted);font-size:12px}
+.legaltext h2{margin-top:10px}
+.legaltext td{vertical-align:top}
+.legaltext a,.check a{color:inherit}
+.legalnav a[aria-current="page"]{font-weight:600}
