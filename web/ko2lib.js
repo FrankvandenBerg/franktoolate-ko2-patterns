@@ -456,6 +456,25 @@
   const PAD_LABELS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', 'ENTER'];
   const TICKS_PER_BAR = 384; // 96 ppqn, 4/4
 
+  // How the K.O. II times a song (worked out from recorded runs): every group keeps its own bar counter that
+  // runs on across positions and wraps at its current pattern length (a group without a pattern in the scene
+  // runs on the scene's length). A position ends when the counter of its lead group wraps: the group with the
+  // longest pattern, the first one (A..D) on a tie. So a position can be shorter than its longest pattern, and
+  // patterns can start part-way. segments: per position the patterns ({g, bars}) of its scene.
+  // Returns lens (bars per position) and phases (per position, the bar each group starts at).
+  function songTiming(segments) {
+    const cnt = { A: 0, B: 0, C: 0, D: 0 }, lens = [], phases = [];
+    for (const parts of segments) {
+      const len = {}, sceneLen = Math.max(1, ...parts.map(q => q.bars || 1));
+      for (const g of 'ABCD') { const q = parts.find(x => x.g === g); len[g] = q ? Math.max(1, q.bars || 1) : sceneLen; cnt[g] %= len[g]; }
+      const lead = parts.length ? parts.reduce((a, q) => (q.bars || 1) > (a.bars || 1) ? q : a).g : 'A';
+      const bars = len[lead] - cnt[lead];
+      lens.push(bars); phases.push({ ...cnt });
+      for (const g of 'ABCD') cnt[g] = (cnt[g] + bars) % len[g];
+    }
+    return { lens, phases };
+  }
+
   class Player {
     constructor(output) { this.output = output; this.timer = null; this.onTick = null; this.muted = new Set(); }
 
@@ -473,15 +492,17 @@
     play(patterns, bpm) { return this.playSegments([patterns], bpm); }
 
     // Plays a list of segments one after another and loops the whole list.
-    // A segment is a set of patterns played together (a scene); it lasts as long as its longest pattern.
+    // A segment is a set of patterns played together (a scene). A song (several segments) is timed like the
+    // K.O. II does it (see songTiming); a single scene loops every pattern at its own length.
     playSegments(segments, bpm) {
       this.stop();
       const events = [];
       this.segmentStarts = [];
       let segStart = 0;
       const gcd = (a, b) => b ? gcd(b, a % b) : a;
-      for (const patterns of segments) {
-        let segTicks = Math.max(1, ...patterns.map(p => p.bars || 1)) * TICKS_PER_BAR;
+      const timing = segments.length > 1 ? songTiming(segments) : null;
+      segments.forEach((patterns, si) => {
+        let segTicks = (timing ? timing.lens[si] : Math.max(1, ...patterns.map(p => p.bars || 1))) * TICKS_PER_BAR;
         // A single scene loops like on the device: every pattern repeats at its own length
         // (a 3-bar and a 4-bar pattern meet again after 12 bars). Capped to keep the event list small.
         if (segments.length === 1) {
@@ -491,9 +512,10 @@
         this.segmentStarts.push(segStart);
         for (const p of patterns) {
           const len = Math.max(1, p.bars) * TICKS_PER_BAR;
-          for (let off = 0; off < segTicks; off += len) {
+          const phase = timing ? timing.phases[si][p.g] * TICKS_PER_BAR : 0;   // pattern may start part-way
+          for (let off = -phase; off < segTicks; off += len) {
             for (const [pad, pos, dur, vel, pitch] of p.ev) {
-              if (pos >= len) continue;
+              if (pos >= len || off + pos < 0 || off + pos >= segTicks) continue;
               // default: trigger the pad by the note map; a hook can route pitched notes elsewhere
               const m = (this.noteFor && this.noteFor(p.g, pad, pitch)) || { ch: 0, note: NOTE_BASE[p.g] + (PAD_NOTE_OFFSET[pad] ?? pad) };
               events.push({ t: segStart + off + pos, g: p.g, ch: m.ch, note: m.note, vel: Math.max(1, Math.min(127, vel)), dur: Math.max(dur, 12) });
@@ -501,7 +523,7 @@
           }
         }
         segStart += segTicks;
-      }
+      });
       const loopTicks = segStart;
       events.sort((a, b) => a.t - b.t);
       this.msPerTick = 60000 / ((bpm || 120) * 96);
@@ -546,6 +568,6 @@
     }
   }
 
-  const api = { KO2, Player, untar, parseProject, pack7, unpack7, tarEntries, buildTar, movePattern, setSong, deletePatterns, deleteScenes, setScenePattern, PAD_LABELS, PAD_NOTE_OFFSET, buildPatternFile, setPatternFile };
+  const api = { KO2, Player, songTiming, untar, parseProject, pack7, unpack7, tarEntries, buildTar, movePattern, setSong, deletePatterns, deleteScenes, setScenePattern, PAD_LABELS, PAD_NOTE_OFFSET, buildPatternFile, setPatternFile };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KO2Lib = api;
 })(typeof window !== 'undefined' ? window : globalThis);

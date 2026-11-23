@@ -283,7 +283,7 @@ details.lib[open]{display:flex;flex-direction:column;gap:12px}
 
 <script src="ko2lib.js"></script>
 <script>
-const { KO2, Player, untar, parseProject, movePattern, setSong, deletePatterns, deleteScenes, setScenePattern, buildPatternFile, setPatternFile } = window.KO2Lib;
+const { KO2, Player, songTiming, untar, parseProject, movePattern, setSong, deletePatterns, deleteScenes, setScenePattern, buildPatternFile, setPatternFile } = window.KO2Lib;
 const GC = { A:'var(--a)', B:'var(--b)', C:'var(--c)', D:'var(--d)' };
 const TPB = 384;
 const $ = s => document.querySelector(s);
@@ -543,7 +543,7 @@ function sceneParts(p, sceneNo){
 // The song as a timeline: one block per position, as wide as it lasts; click a block to open that scene.
 function songTimeline(p){
   if (!p.song.length) return '';
-  const bars = p.song.map(n => Math.max(1, ...sceneParts(p, n).map(q => q.bars || 1)));
+  const bars = deviceLens(p);
   const total = bars.reduce((a, b) => a + b, 0);
   const hue = n => (n * 47) % 360;
   let h = `<div class="timeline" id="timeline" data-total="${total}">`, at = 0;
@@ -564,7 +564,7 @@ function updateSongProgress(t, source){
   head.hidden = false; tl.style.setProperty('--tp', tt / total);
   // which position are we in?
   const p = DATA[cur]; let at = 0, pos = 0;
-  const bars = p.song.map(n => Math.max(1, ...sceneParts(p, n).map(q => q.bars || 1)));
+  const bars = deviceLens(p);
   for (let i = 0; i < bars.length; i++) { if (tt < (at + bars[i]) * TPB) { pos = i; break; } at += bars[i]; }
   if (label) label.textContent = `▶ ${source} · bar ${Math.floor(tt / TPB) + 1} of ${totalBars} · position ${pos + 1} (scene ${String(p.song[pos]).padStart(2, '0')})`;
   document.querySelectorAll('.tl-pos').forEach((el, i) => el.classList.toggle('now', i === pos));
@@ -578,7 +578,7 @@ function updateSongProgress(t, source){
 function songHtml(p){
   const editable = !!p.songEditable;
   if (!p.song || !p.song.length) return `<p class="none">${editable ? 'No song arranged in this project.' : 'This project has no song data (it may come from an older OS). Make a song on the K.O. II first.'}</p>`;
-  const bars = p.song.map(n => Math.max(1, ...sceneParts(p, n).map(q => q.bars || 1)));
+  const bars = deviceLens(p);
   const total = bars.reduce((a, b) => a + b, 0);
   const on = isPlaying('song', String(cur));
   const sceneNos = [...new Set([...p.scenes.map(sc => sc[0]), ...p.song])].sort((a, b) => a - b);
@@ -1204,26 +1204,15 @@ function sceneScore(scene, heard){
   return recall + precision ? 2 * recall * precision / (recall + precision) : 0;
 }
 // ---- Song tracking for the device's own song playback ----
-// The K.O. II's song positions do not always last as long as their longest pattern (patterns keep their
-// own phase), and it sends no stop at the end of a song. So: start from the song position pointer, then
-// move on when the notes heard in the last bar clearly belong to the scene of a later position, and stop
-// when the device has been silent for two bars.
+// The K.O. II sends no song position changes and no stop at the end of a song. The tool works out the
+// length of every position in advance (deviceLens), runs on the clock from the song position pointer,
+// corrects itself when the notes heard clearly belong to a later position, and stops at the computed end
+// (or after silence, as a fallback).
 const songTrack = { pos: 0, startClock: 0, ended: false, endClock: 0, lastNoteClock: 0, bar: [] };
-function songLens(p){ return p.song.map(n => Math.max(1, ...sceneParts(p, n).map(q => q.bars || 1))); }
-// The K.O. II plays every run of a song the same way, but its positions can be shorter than their scenes.
-// The tool learns the real length of each position from a run (by listening) and uses it from then on,
-// so the bar can run smoothly on the clock; listening stays on as a correction.
-function learnKey(p){ return `ko2-songlens-${deviceSerial || ''}-${p.p}-${p.song.join('.')}-${songLens(p).join('.')}`; }
-function learnedLens(p){ try { return JSON.parse(localStorage.getItem(learnKey(p)) || 'null') || []; } catch { return []; } }
-function saveLearned(p, arr){ try { localStorage.setItem(learnKey(p), JSON.stringify(arr)); } catch {} }
-function deviceLens(p){ const l = learnedLens(p); return songLens(p).map((n, i) => l[i] || n); }
-function learnPos(p, i, clocks){
-  const bars = Math.round(clocks / 96); if (bars < 1) return;
-  const arr = learnedLens(p); if (arr[i] === bars) return;
-  arr[i] = bars; saveLearned(p, arr);
-}
+// Real length of every song position on the K.O. II (see songTiming in ko2lib.js).
+function deviceLens(p){ return songTiming(p.song.map(n => sceneParts(p, n))).lens; }
+function songPhases(p){ return songTiming(p.song.map(n => sceneParts(p, n))).phases; }
 function moveTo(p, j, atClock){
-  if (j === songTrack.pos + 1) learnPos(p, songTrack.pos, atClock - songTrack.startClock);
   songTrack.pos = j; songTrack.startClock = atClock; songTrack.bar = [];
 }
 function songTrackFromSpp(){
@@ -1244,18 +1233,17 @@ function songTrackBar(){
   // End of song: the device sends no stop. In the last position one silent bar is enough, elsewhere two.
   const lastPos = songTrack.pos === p.song.length - 1;
   if (follow.clocks - songTrack.lastNoteClock > (lastPos ? 1 : 2) * 96) {
-    if (lastPos) learnPos(p, songTrack.pos, Math.ceil((songTrack.lastNoteClock - songTrack.startClock) / 96) * 96);
     songTrack.ended = true; songTrack.endClock = follow.clocks; updateSongProgress(null); showFollow(); scheduleFollowFrame(); return;
   }
   const cur0 = p.song[songTrack.pos];
-  // Known end: once the last position has played its learned length, the song is over.
-  const learnedLast = learnedLens(p)[p.song.length - 1];
-  if (lastPos && learnedLast && (follow.clocks - songTrack.startClock) / 96 >= learnedLast) {
+  // Known end: once the last position has played its computed length, the song is over.
+  const lastLen = deviceLens(p)[p.song.length - 1];
+  if (lastPos && (follow.clocks - songTrack.startClock) / 96 >= lastLen) {
     songTrack.ended = true; songTrack.endClock = follow.clocks; updateSongProgress(null); showFollow(); scheduleFollowFrame(); return;
   }
-  // Move on by time once the position's (learned) length has passed; notes correct this when needed.
+  // Move on by time once the position's computed length has passed; notes correct this when needed.
   const lens = deviceLens(p), elapsed = (follow.clocks - songTrack.startClock) / 96;
-  if (songTrack.pos + 1 < p.song.length && elapsed >= lens[songTrack.pos] && (p.song[songTrack.pos + 1] === cur0 || learnedLens(p)[songTrack.pos])) {
+  if (songTrack.pos + 1 < p.song.length && elapsed >= lens[songTrack.pos]) {
     songTrack.pos++; songTrack.startClock = follow.clocks; songTrack.bar = []; return;
   }
   if (heard.length < 2) return;
@@ -1283,10 +1271,9 @@ function songTrackNote(pitch){
   }
 }
 function songTrackTicks(){
-  const p = DATA[cur]; const nominal = songLens(p), real = deviceLens(p);
-  const start = nominal.slice(0, songTrack.pos).reduce((a, b) => a + b, 0) * TPB;
-  const frac = Math.min(0.999, Math.max(0, (follow.clocks - songTrack.startClock) / 96 / real[songTrack.pos]));
-  return start + frac * nominal[songTrack.pos] * TPB;   // smooth position inside the timeline block
+  const p = DATA[cur], lens = deviceLens(p);
+  const start = lens.slice(0, songTrack.pos).reduce((a, b) => a + b, 0) * TPB;
+  return start + Math.min(0.999, Math.max(0, (follow.clocks - songTrack.startClock) / 96 / lens[songTrack.pos])) * lens[songTrack.pos] * TPB;
 }
 function heardNote(pitch){
   const t = follow.clocks * 4;
@@ -1338,7 +1325,11 @@ function drawFollow(){
   document.querySelectorAll('.roll[data-g]').forEach(el => {
     const x = patFor(p, el.dataset.g), g = el.querySelector('.rollgrid'), ph = el.querySelector('.playhead');
     if (!x || !g || !ph) return;
-    const len = Math.max(1, x.bars) * TPB, t = (follow.clocks * 4) % len;
+    const len = Math.max(1, x.bars) * TPB;
+    // during a song every group runs on its own counter (see songTiming); otherwise patterns loop from the start
+    const t = p.song.length > 1 && !songTrack.ended
+      ? (songPhases(p)[songTrack.pos][x.g] * TPB + Math.max(0, follow.clocks - songTrack.startClock) * 4) % len
+      : (follow.clocks * 4) % len;
     ph.hidden = false; g.style.setProperty('--ph', t / len);
     el.querySelectorAll('.note').forEach(n => {
       const e = x.ev[+n.dataset.ni]; if (!e) return;
@@ -1351,10 +1342,12 @@ function updatePlayheads(f, seg){
   document.querySelectorAll('.tl-pos').forEach((el, i) => el.classList.toggle('now', f != null && playing && playing.kind === 'song' && i === seg));
   const segStart = (player && player.segmentStarts && player.segmentStarts[seg]) || 0;
   const t = f == null ? null : f * player.loopTicks - segStart;
+  const songPh = playing && playing.kind === 'song' && DATA[cur].song.length > 1 ? songPhases(DATA[cur])[seg] : null;
   document.querySelectorAll('.rollgrid').forEach(g => {
     const ph = g.querySelector('.playhead'); if (!ph) return;
     ph.hidden = t == null;
-    if (t != null) g.style.setProperty('--ph', (t % +g.dataset.len) / +g.dataset.len);
+    const grp = g.closest('.roll[data-g]')?.dataset.g, off = songPh && grp ? songPh[grp] * TPB : 0;
+    if (t != null) g.style.setProperty('--ph', ((t + off) % +g.dataset.len) / +g.dataset.len);
   });
   updateCycle(playing && playing.kind === 'scene' ? t : null);
   updateSongProgress(playing && playing.kind === 'song' && f != null ? f * player.loopTicks : null, 'tool');
