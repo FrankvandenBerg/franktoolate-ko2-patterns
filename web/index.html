@@ -140,6 +140,7 @@ table.snd tr.cat .cat-meta{font-family:var(--mono);font-size:11px;color:var(--mu
 .pp-toggle{margin-left:auto;font:inherit;font-size:16px;line-height:1;width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer}
 .pp-list{margin:0;padding-left:20px;font-family:var(--mono);font-size:12px;line-height:1.6;max-height:180px;overflow:auto}
 .pp-actions{display:flex;gap:8px;flex-wrap:wrap}
+.pp-auto{font-size:12px;color:var(--ink)}
 .pp-note{margin:0;font-size:11px;color:var(--muted);line-height:1.45}
 #modal{position:fixed;inset:0;z-index:60;background:rgba(10,10,12,.45);display:grid;place-items:center;padding:16px}
 #modal[hidden]{display:none}
@@ -517,6 +518,7 @@ let pendingOpen = true;
 function drawPending(p){
   let el = $('#pendingPop');
   if (!el) { el = document.createElement('aside'); el.id = 'pendingPop'; el.setAttribute('aria-live', 'polite'); document.body.appendChild(el); }
+  if (p && p.changes.length) scheduleAutoWrite();
   if (view !== 'projects' || !p || !p.changes.length) { el.hidden = true; return; }
   el.hidden = false;
   const n = p.changes.length;
@@ -528,7 +530,8 @@ function drawPending(p){
       <button class="btn small sec" id="undoProj">Undo all</button>
       <button class="btn small sec" id="dlProj" title="Download the edited project as a .tar file">Download</button>
     </div>
-    <p class="pp-note">Before writing, a backup of the project on the K.O. II is stored on the server. Afterwards the project is read back to check it.</p>`;
+    <label class="check pp-auto"><input type="checkbox" id="autoWrite" ${autoWrite ? 'checked' : ''}> Write changes automatically</label>
+    <p class="pp-note">${autoWrite ? (autoWriteFailed ? 'Auto-write paused after an error: use Write to K.O. II once to continue.' : 'Changes are written a moment after your last edit (after the K.O. II stops playing).') : 'Before writing, a backup of the project on the K.O. II is stored on the server. Afterwards the project is read back to check it.'}</p>`;
 }
 function groupAudible(g){ return soloGroup ? soloGroup === g : mixer[g]; }
 function applyMixer(){ if (player) for (const g of 'ABCD') player.setMuted(g, !groupAudible(g)); render(); }
@@ -810,10 +813,12 @@ function applyMove(fromKey, toG, toN){
     render();
   } catch (e) { status(e.message || String(e), true); }
 }
+let writing = false;
 async function writeProject(){
-  const p = DATA[cur];
-  if (!dev || !p.node) return;
-  stopPlay();
+  const p = DATA[cur], at = cur;
+  if (!dev || !p.node || writing) return;
+  writing = true;
+  if (!autoWrite) stopPlay();
   const btns = document.querySelectorAll('#writeProj,#undoProj,#connect'); btns.forEach(b => b.disabled = true);
   try {
     status(`Backing up project ${p.p}…`);
@@ -848,11 +853,25 @@ async function writeProject(){
     // the K.O. II plays the active project from memory: tell it to load the new version
     // ask the device to reload the active project; it may take its time to answer, so don't wait for it
     if (active === p.node) dev.setMetadata(projDirNode, { active: p.node }, { quiet: true, timeout: 5000 }).catch(() => {});
-    DATA[cur] = { ...p, orig: back, tar: back, changes: [] };
-    status(`Project ${p.p} written and verified.`);
+    // edits made while writing stay pending (they are written next)
+    const latest = DATA[at];
+    DATA[at] = latest === p ? { ...p, orig: back, tar: back, changes: [] } : { ...latest, orig: back, changes: latest.changes.slice(p.changes.length) };
+    status(`Project ${p.p} written and verified${autoWrite ? ' (auto-write)' : ''}.`);
     render();
-  } catch (e) { progress(null); status(e.message || String(e), true); }
-  finally { btns.forEach(b => b.disabled = false); }
+  } catch (e) { progress(null); status(e.message || String(e), true); autoWriteFailed = true; }
+  finally { btns.forEach(b => b.disabled = false); writing = false; }
+}
+// Auto-write: changes go to the K.O. II by themselves, a moment after the last edit (backup + check as always).
+let autoWrite = false, autoWriteFailed = false, autoWriteTimer = null;
+try { autoWrite = localStorage.getItem('ko2-autowrite') === '1'; } catch {}
+function scheduleAutoWrite(){
+  clearTimeout(autoWriteTimer);
+  const p = DATA[cur];
+  if (!autoWrite || autoWriteFailed || !dev || !p || !p.node || !p.changes.length) return;
+  autoWriteTimer = setTimeout(() => {
+    if (follow.running || drag || writing) { scheduleAutoWrite(); return; }   // wait until the device stops / editing ends
+    writeProject();
+  }, 1500);
 }
 function stageDelete(f, withPatterns){
   const p = DATA[cur];
@@ -1258,7 +1277,7 @@ function playSelected(){
 }
 document.addEventListener('click', ev => {
   if (ev.target.closest('#mvGo')) { applyMove($('#mvFrom').value, $('#mvG').value, +$('#mvN').value); return; }
-  if (ev.target.closest('#writeProj')) { writeProject(); return; }
+  if (ev.target.closest('#writeProj')) { autoWriteFailed = false; writeProject(); return; }
   if (ev.target.closest('#refreshProj')) { syncActive('refresh'); return; }
   if (ev.target.closest('#ppToggle')) { pendingOpen = !pendingOpen; drawPending(DATA[cur]); return; }
   if (ev.target.closest('#openBackups')) { openBackups(); return; }
@@ -1319,6 +1338,7 @@ document.addEventListener('input', ev => {
   if (ev.target.id === 'sndQ') { soundsQuery = ev.target.value; const pos = ev.target.selectionStart; renderSounds(); const q = $('#sndQ'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } }
 });
 document.addEventListener('change', ev => {
+  if (ev.target.id === 'autoWrite') { autoWrite = ev.target.checked; autoWriteFailed = false; try { localStorage.setItem('ko2-autowrite', autoWrite ? '1' : '0'); } catch {} drawPending(DATA[cur]); scheduleAutoWrite(); return; }
   if (ev.target.id === 'sndF') { soundsFilter = ev.target.value; renderSounds(); return; }
   if (ev.target.id === 'followScenes') { follow.followScenes = ev.target.checked; follow.heard = []; return; }
   if (ev.target.id === 'edVel' || ev.target.id === 'edLen' || ev.target.id === 'edBars' || ev.target.id === 'edPitch') {
