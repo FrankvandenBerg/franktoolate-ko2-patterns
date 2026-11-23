@@ -1226,9 +1226,14 @@ function songTrackBar(){
   const p = DATA[cur]; if (!p || p.song.length < 2 || songTrack.ended) return;
   const heard = songTrack.bar; songTrack.bar = [];
   if (follow.clocks - songTrack.lastNoteClock > 2 * 96) { songTrack.ended = true; updateSongProgress(null); return; }
+  const cur0 = p.song[songTrack.pos];
+  // Same scene twice in a row sounds identical: move on by time once the position's length has passed.
+  const lens = songLens(p), elapsed = (follow.clocks - songTrack.startClock) / 96;
+  if (songTrack.pos + 1 < p.song.length && p.song[songTrack.pos + 1] === cur0 && elapsed >= lens[songTrack.pos]) {
+    songTrack.pos++; songTrack.startClock = follow.clocks; return;
+  }
   if (heard.length < 2) return;
   const fits = n => heard.filter(x => scenePitches(p, n).has(x)).length / heard.length;
-  const cur0 = p.song[songTrack.pos];
   if (fits(cur0) >= 0.9) return;                                   // still the current position's scene
   for (let j = songTrack.pos + 1; j < Math.min(p.song.length, songTrack.pos + 4); j++) {
     if (p.song[j] !== cur0 && fits(p.song[j]) >= 0.9) { songTrack.pos = j; songTrack.startClock = Math.floor(follow.clocks / 96) * 96 - 96; return; }
