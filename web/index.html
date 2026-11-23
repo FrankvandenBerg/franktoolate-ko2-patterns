@@ -1245,13 +1245,13 @@ function songTrackBar(){
   const lastPos = songTrack.pos === p.song.length - 1;
   if (follow.clocks - songTrack.lastNoteClock > (lastPos ? 1 : 2) * 96) {
     if (lastPos) learnPos(p, songTrack.pos, Math.ceil((songTrack.lastNoteClock - songTrack.startClock) / 96) * 96);
-    songTrack.ended = true; updateSongProgress(null); showFollow(); return;
+    songTrack.ended = true; updateSongProgress(null); showFollow(); scheduleFollowFrame(); return;
   }
   const cur0 = p.song[songTrack.pos];
   // Known end: once the last position has played its learned length, the song is over.
   const learnedLast = learnedLens(p)[p.song.length - 1];
   if (lastPos && learnedLast && (follow.clocks - songTrack.startClock) / 96 >= learnedLast) {
-    songTrack.ended = true; updateSongProgress(null); showFollow(); return;
+    songTrack.ended = true; updateSongProgress(null); showFollow(); scheduleFollowFrame(); return;
   }
   // Move on by time once the position's (learned) length has passed; notes correct this when needed.
   const lens = deviceLens(p), elapsed = (follow.clocks - songTrack.startClock) / 96;
@@ -1325,8 +1325,14 @@ function showFollow(){
 function drawFollow(){
   if (!follow.running || playing) return;
   const p = DATA[cur]; if (!p) return;
+  if (p.song.length > 1 && songTrack.ended) {                       // song is over: everything stands still
+    updateCycle(null);
+    document.querySelectorAll('.note.hit').forEach(n => n.classList.remove('hit'));
+    document.querySelectorAll('.playhead').forEach(ph => ph.hidden = true);
+    return;
+  }
   updateCycle(follow.clocks * 4);
-  if (p.song.length > 1 && !songTrack.ended) updateSongProgress(songTrackTicks(), 'K.O. II');
+  if (p.song.length > 1) updateSongProgress(songTrackTicks(), 'K.O. II');
   document.querySelectorAll('.roll[data-g]').forEach(el => {
     const x = patFor(p, el.dataset.g), g = el.querySelector('.rollgrid'), ph = el.querySelector('.playhead');
     if (!x || !g || !ph) return;
