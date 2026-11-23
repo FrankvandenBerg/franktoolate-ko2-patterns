@@ -179,14 +179,16 @@
       return buf.subarray(0, got);
     }
 
-    async setMetadata(node, obj) {
+    // opts.quiet: no syncing indicator (e.g. telling the device to reload, which may not answer quickly)
+    async setMetadata(node, obj, opts = {}) {
+      if (opts.quiet) return this._setMetadata(node, obj, opts.timeout);
       this._busy('write', true);
-      try { return await this._setMetadata(node, obj); } finally { this._busy('write', false); }
+      try { return await this._setMetadata(node, obj, opts.timeout); } finally { this._busy('write', false); }
     }
 
-    async _setMetadata(node, obj) {
+    async _setMetadata(node, obj, timeout = 30000) {
       const json = Array.from(new TextEncoder().encode(JSON.stringify(obj)));
-      await this.req(CMD_FILE, [7, 1, node >> 8, node & 255, ...json, 0], 30000);
+      await this.req(CMD_FILE, [7, 1, node >> 8, node & 255, ...json, 0], timeout);
     }
 
     // Audition a sound on the device itself (as TE's sample tool does): [5, start=1|stop=2, node, offset, length]

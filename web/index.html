@@ -846,7 +846,8 @@ async function writeProject(){
     progress(null);
     if (!sameBytes(back, p.tar)) throw new Error('Verification failed: what the K.O. II returns differs from what was written. Restore the stored backup if needed (backups button).');
     // the K.O. II plays the active project from memory: tell it to load the new version
-    if (active === p.node) { try { await dev.setMetadata(projDirNode, { active: p.node }); } catch {} }
+    // ask the device to reload the active project; it may take its time to answer, so don't wait for it
+    if (active === p.node) dev.setMetadata(projDirNode, { active: p.node }, { quiet: true, timeout: 5000 }).catch(() => {});
     DATA[cur] = { ...p, orig: back, tar: back, changes: [] };
     status(`Project ${p.p} written and verified.`);
     render();
@@ -1120,7 +1121,10 @@ function showSyncing(kind){
   clearTimeout(syncToastTimer);
   if (kind) {
     el.innerHTML = `<span class="spin"></span>${kind === 'write' ? 'Writing to the K.O. II…' : 'Syncing with the K.O. II…'}`;
-    syncToastTimer = setTimeout(() => { el.hidden = false; }, 150);   // skip flicker on very short reads
+    syncToastTimer = setTimeout(() => {
+      el.hidden = false;
+      syncToastTimer = setTimeout(() => { el.hidden = true; }, 30000);   // safety net: never stay up forever
+    }, 150);   // skip flicker on very short reads
   } else {
     syncToastTimer = setTimeout(() => { el.hidden = true; }, 250);
   }
