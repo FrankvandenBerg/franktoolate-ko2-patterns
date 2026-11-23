@@ -1248,6 +1248,11 @@ function songTrackBar(){
     songTrack.ended = true; updateSongProgress(null); showFollow(); return;
   }
   const cur0 = p.song[songTrack.pos];
+  // Known end: once the last position has played its learned length, the song is over.
+  const learnedLast = learnedLens(p)[p.song.length - 1];
+  if (lastPos && learnedLast && (follow.clocks - songTrack.startClock) / 96 >= learnedLast) {
+    songTrack.ended = true; updateSongProgress(null); showFollow(); return;
+  }
   // Move on by time once the position's (learned) length has passed; notes correct this when needed.
   const lens = deviceLens(p), elapsed = (follow.clocks - songTrack.startClock) / 96;
   if (songTrack.pos + 1 < p.song.length && elapsed >= lens[songTrack.pos] && (p.song[songTrack.pos + 1] === cur0 || learnedLens(p)[songTrack.pos])) {
@@ -1262,7 +1267,12 @@ function songTrackBar(){
 }
 // React on the first note that cannot come from the current position's scene but does belong to a coming one.
 function songTrackNote(pitch){
-  const p = DATA[cur]; if (!p || p.song.length < 2 || songTrack.ended) return;
+  const p = DATA[cur]; if (!p || p.song.length < 2) return;
+  if (songTrack.ended) {
+    // the song loops (setting 421): notes of the first position start a new round
+    if (scenePitches(p, p.song[0]).has(pitch)) Object.assign(songTrack, { pos: 0, startClock: Math.floor(follow.clocks / 96) * 96, ended: false, bar: [] });
+    return;
+  }
   const cur0 = p.song[songTrack.pos];
   if (scenePitches(p, cur0).has(pitch)) return;
   for (let j = songTrack.pos + 1; j < Math.min(p.song.length, songTrack.pos + 4); j++) {
