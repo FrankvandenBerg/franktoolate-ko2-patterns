@@ -436,6 +436,9 @@
       if (c.length < 6 || !(c[0] || c[1] || c[2] || c[3])) continue;
       scenes.push([i + 1, c[0], c[1], c[2], c[3]]);
     }
+    // A new project has no scenes file until the K.O. II stores one (e.g. when you make a song);
+    // the device then plays scene 1 with pattern 01 of every group.
+    if (!sc) scenes.push([1, 1, 1, 1, 1]);
     // Song: byte 604 = active scene, byte 612 = number of song positions, 613.. = scene per position
     let song = [], activeScene = null;
     if (sc && sc.length >= 613) {

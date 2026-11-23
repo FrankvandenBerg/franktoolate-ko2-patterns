@@ -591,7 +591,7 @@ function updateSongProgress(t, source){
 }
 function songHtml(p){
   const editable = !!p.songEditable;
-  if (!p.song || !p.song.length) return `<p class="none">${editable ? 'No song arranged in this project.' : 'This project has no song data (it may come from an older OS). Make a song on the K.O. II first.'}</p>`;
+  if (!p.song || !p.song.length) return `<p class="none">${editable ? 'No song arranged in this project.' : 'No song yet. You can make one on the K.O. II (hold MAIN and press ENTER); scenes play and follow fine without one.'}</p>`;
   const bars = deviceLens(p);
   const total = bars.reduce((a, b) => a + b, 0);
   const on = isPlaying('song', String(cur));
@@ -605,7 +605,7 @@ function songHtml(p){
         + `<button data-song="remove" data-i="${i}" ${p.song.length === 1 ? 'disabled' : ''} aria-label="Remove position ${i + 1}">✕</button>`
       : `scene ${String(n).padStart(2, '0')}`) + `<span class="k">${bars[i]}b</span></span>`).join('');
   if (editable) h += `<button class="play" data-song="add" ${p.song.length >= 99 ? 'disabled' : ''}>+ add position</button>`;
-  return h + `</div><p class="foot">The song as arranged in the K.O. II's song list editor (hold MAIN and press ENTER). Each position lasts as long as the longest pattern in its scene; the tool loops the song. Song changes are written together with your other changes.</p>`;
+  return h + `</div><p class="foot">The song as arranged in the K.O. II's song list editor (hold MAIN and press ENTER). Each position runs until the longest pattern of its scene comes round again, so a position can be shorter when that pattern was already part-way (as on the K.O. II); the tool loops the song. Song changes are written together with your other changes.</p>`;
 }
 function applySong(next, msg){
   const p = DATA[cur];
