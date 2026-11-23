@@ -193,6 +193,9 @@
 
     // Audition a sound on the device itself (as TE's sample tool does): [5, start=1|stop=2, node, offset, length]
     async playSound(node) { await this.req(CMD_FILE, [5, 1, node >> 8, node & 255, 0, 0, 0, 0, 0, 0, 0, 0]); }
+    // Delete a file (e.g. a sound slot): FILE [6, node]
+    async deleteFile(node) { this._busy('write', true); try { await this.req(CMD_FILE, [6, node >> 8, node & 255], 30000); } finally { this._busy('write', false); } }
+
     async stopSound(node) { await this.req(CMD_FILE, [5, 2, node >> 8, node & 255, 0, 0, 0, 0, 0, 0, 0, 0]); }
 
     async metadata(node) {
