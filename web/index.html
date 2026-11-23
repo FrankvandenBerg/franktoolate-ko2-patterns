@@ -197,6 +197,12 @@ a.play{text-decoration:none;display:inline-block}
 .timeline::before{content:"";position:absolute;left:0;top:0;bottom:0;width:calc(var(--tp,0) * 100%);background:color-mix(in srgb,var(--ink) 8%,transparent);pointer-events:none;z-index:1}
 .tl-now{color:var(--ink)}
 .tl-axis{display:flex;justify-content:space-between;font:11px var(--mono);color:var(--muted)}
+#syncToast{position:fixed;top:calc(env(safe-area-inset-top,0px) + 64px);right:max(16px,env(safe-area-inset-right,0px));z-index:55;display:flex;align-items:center;gap:8px;
+  background:var(--ink);color:var(--bg);font:500 12px var(--mono);padding:8px 12px;border-radius:999px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+#syncToast[hidden]{display:none}
+#syncToast .spin{width:12px;height:12px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){#syncToast .spin{animation:none}}
 .focus{outline:2px solid var(--orange)!important;outline-offset:2px}
 .chan[data-chan]{cursor:pointer}
 .hint{font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:6px;padding:8px 10px}
@@ -301,6 +307,7 @@ $('#connect').addEventListener('click', async () => {
     dev = await KO2.connect();
     player = new Player(dev.output);
     dev.onRealtime = onDeviceMidi;
+    dev.onBusy = showSyncing;
     player.noteFor = (g, pad, pitch) => {
       const p = DATA[cur]; const c = p && p.padCh ? p.padCh[g.toLowerCase() + (pad + 1)] : 0;
       // A pad with its own MIDI channel (sound edit → MIDI) can be played at a pitch on that channel.
@@ -1105,6 +1112,19 @@ async function syncActive(reason){
   finally { sync.busy = false; }
 }
 function startSync(){ clearInterval(sync.timer); }
+// Small "Syncing…" window while the tool reads from or writes to the K.O. II.
+let syncToastTimer = null;
+function showSyncing(kind){
+  let el = $('#syncToast');
+  if (!el) { el = document.createElement('div'); el.id = 'syncToast'; el.setAttribute('role', 'status'); el.hidden = true; document.body.appendChild(el); }
+  clearTimeout(syncToastTimer);
+  if (kind) {
+    el.innerHTML = `<span class="spin"></span>${kind === 'write' ? 'Writing to the K.O. II…' : 'Syncing with the K.O. II…'}`;
+    syncToastTimer = setTimeout(() => { el.hidden = false; }, 150);   // skip flicker on very short reads
+  } else {
+    syncToastTimer = setTimeout(() => { el.hidden = true; }, 250);
+  }
+}
 function onDeviceMidi(d){
   const st = d[0];
   if ((st === 0xFA || st === 0xFB) && dev) dev.abortGet = true;   // stop any background read right away

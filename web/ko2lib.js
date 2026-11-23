@@ -101,6 +101,11 @@
 
     // Upload a file; for a project archive use isDir=true with the project's node id (as TE's restore does).
     async put(data, name, parentId, fileId = 0, isDir = false, onProgress) {
+      this._busy('write', true);
+      try { return await this._put(data, name, parentId, fileId, isDir, onProgress); } finally { this._busy('write', false); }
+    }
+
+    async _put(data, name, parentId, fileId = 0, isDir = false, onProgress) {
       const flags = 4 | (isDir ? 2 : 1);
       const nameBytes = Array.from(new TextEncoder().encode(name).subarray(0, 54));
       const size = data.length;
@@ -146,7 +151,18 @@
       return out;
     }
 
+    // Let the page show a "syncing" indicator while files move between the tool and the device.
+    _busy(kind, on) {
+      this._busyN = (this._busyN || 0) + (on ? 1 : -1);
+      this.onBusy && this.onBusy(this._busyN > 0 ? kind : null);
+    }
+
     async get(node, onProgress, abortable = false) {
+      this._busy('read', true);
+      try { return await this._get(node, onProgress, abortable); } finally { this._busy('read', false); }
+    }
+
+    async _get(node, onProgress, abortable = false) {
       const r = await this.req(CMD_FILE, [3, 0, node >> 8, node & 255, 0, 0, 0, 0]);
       const size = be32(r, 3);
       const buf = new Uint8Array(size);
@@ -164,6 +180,11 @@
     }
 
     async setMetadata(node, obj) {
+      this._busy('write', true);
+      try { return await this._setMetadata(node, obj); } finally { this._busy('write', false); }
+    }
+
+    async _setMetadata(node, obj) {
       const json = Array.from(new TextEncoder().encode(JSON.stringify(obj)));
       await this.req(CMD_FILE, [7, 1, node >> 8, node & 255, ...json, 0], 30000);
     }
