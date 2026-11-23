@@ -267,6 +267,7 @@ function page(string $title, string $body, string $js = ''): void {
     echo '<style>' . file_get_contents(KO_HOME . '/lib/page.css') . '</style></head><body><main class="box">';
     echo $body;
     echo '</main>';
+    echo '<footer class="legal">K.O. II Patterns is an independent project, not affiliated with or endorsed by Teenage Engineering. · <a href="' . h((string)config('source_url', 'https://github.com/franktoolate/ko2-patterns')) . '" target="_blank" rel="noopener">Source code (AGPL-3.0)</a></footer>';
     // Only the script a page needs ('login' or 'register'), comments and indentation stripped.
     if ($js === 'login' || $js === 'register') {
         $code = file_get_contents(KO_HOME . "/lib/passkey-$js.js");

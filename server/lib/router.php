@@ -161,7 +161,7 @@ function serve_app_file(array $u, string $file): void {
     $menu = '<details class="um"><summary>' . h($u['name'] ?: $u['email']) . '</summary><div class="um-pop">'
         . '<span class="um-mail">' . h($u['email']) . '</span>'
         . '<a href="' . h(url('account')) . '">Account &amp; passkeys</a>'
-        . '<a href="' . h((string)config('source_url', 'https://github.com/franktoolate/kostudio')) . '" target="_blank" rel="noopener">Source code (AGPL-3.0)</a>'
+        . '<a href="' . h((string)config('source_url', 'https://github.com/franktoolate/ko2-patterns')) . '" target="_blank" rel="noopener">Source code (AGPL-3.0)</a>'
         . '<form method="post" action="' . h(url('logout')) . '">' . csrf_field() . '<button>Sign out</button></form></div></details>';
     $html = file_get_contents($full);
     $html = str_replace('<!--user-menu-->', $menu, $html);
