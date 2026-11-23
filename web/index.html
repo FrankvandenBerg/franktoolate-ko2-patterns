@@ -329,6 +329,7 @@ body.view-sounds #vu,body.view-sounds #vuOpen{display:none}
 #help kbd{border:1px solid var(--line);border-radius:3px;padding:0 4px;font-size:11px;background:var(--bg)}
 .helpbtn{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-weight:700;cursor:pointer;flex:none}
 .helpbtn:hover{border-color:var(--ink)}
+body.ko-busy :is([data-play],[data-snd],.tile-hit):not([aria-pressed="true"]){opacity:.4;pointer-events:none}
 .legal{border-top:1px solid var(--line);padding-top:14px;font-size:12px;color:var(--muted);line-height:1.6}
 .legal a{color:inherit}
 </style>
@@ -952,7 +953,7 @@ let writing = false;
 async function writeProject(){
   const p = DATA[cur], at = cur;
   if (!dev || !p.node || writing) return;
-  writing = true;
+  writing = true; updBusy();
   if (!autoWrite) stopPlay();
   const btns = document.querySelectorAll('#writeProj,#undoProj,#connect'); btns.forEach(b => b.disabled = true);
   try {
@@ -994,7 +995,7 @@ async function writeProject(){
     status(`Project ${p.p} written and verified${autoWrite ? ' (auto-write)' : ''}.`);
     render();
   } catch (e) { progress(null); status(e.message || String(e), true); autoWriteFailed = true; }
-  finally { btns.forEach(b => b.disabled = false); writing = false; }
+  finally { btns.forEach(b => b.disabled = false); writing = false; updBusy(); }
 }
 // Auto-write: changes go to the K.O. II by themselves, a moment after the last edit (backup + check as always).
 let autoWrite = false, autoWriteFailed = false, autoWriteTimer = null;
@@ -1040,6 +1041,7 @@ function stageDelete(f, withPatterns){
 function playScene(n, toggle){
   if (!player) return;
   const key = cur + ':' + n;
+  if (busyNow() && !(toggle && isPlaying('scene', key))) return;   // reading/writing: only stopping is allowed
   if (toggle && isPlaying('scene', key)) { stopPlay(); render(); return; }
   stopPlay();
   playing = { kind: 'scene', key };
@@ -1478,7 +1480,7 @@ document.addEventListener('focusout', ev => {
   if (inp && editingSound === +inp.dataset.sname) renameSound(+inp.dataset.sname, inp.value);
 });
 async function toggleSound(node){
-  if (!dev) return;
+  if (!dev || busyNow()) return;
   try {
     if (playingSound != null) await dev.stopSound(playingSound);
     if (playingSound === node) { playingSound = null; }
@@ -1521,8 +1523,12 @@ window.addEventListener('focus', () => { if (dev && !follow.running) { resubscri
 function resubscribe(){ if (dev && !writing && !sync.busy && !follow.running && !playing) dev.fsInit().catch(() => {}); }
 setInterval(resubscribe, 20000);
 // Small "Syncing…" window while the tool reads from or writes to the K.O. II.
-let syncToastTimer = null;
+let syncToastTimer = null, koBusy = false;
+// While the tool reads from or writes to the K.O. II, play buttons are greyed out and do nothing.
+function updBusy(){ document.body.classList.toggle('ko-busy', koBusy || writing); }
+const busyNow = () => koBusy || writing;
 function showSyncing(kind){
+  koBusy = !!kind; updBusy();
   let el = $('#syncToast');
   if (!el) { el = document.createElement('div'); el.id = 'syncToast'; el.setAttribute('role', 'status'); el.hidden = true; document.body.appendChild(el); }
   clearTimeout(syncToastTimer);
@@ -1888,7 +1894,7 @@ function isPlaying(kind, key){ return !!playing && playing.kind === kind && play
 function showHead(){ return playing && playing.kind === 'pat' && playing.key === cur + ':' + sel; }
 function stopPlay(){ if (player) player.stop(); playing = null; }
 function togglePlay(kind, key, pats){
-  if (!player) return;
+  if (!player || (busyNow() && !isPlaying(kind, key))) return;
   if (isPlaying(kind, key)) { stopPlay(); render(); return; }
   stopPlay();
   playing = { kind, key };
@@ -1945,7 +1951,7 @@ document.addEventListener('click', ev => {
     else if (pl.dataset.play === 'song') {
       const p = DATA[cur];
       if (isPlaying('song', String(cur))) { stopPlay(); render(); }
-      else { stopPlay(); playing = { kind: 'song', key: String(cur) }; applyMixer(); player.playSegments(p.song.map(n => sceneParts(p, n)), p.bpm, { once: !songLoop }); render(); }
+      else if (!busyNow()) { stopPlay(); playing = { kind: 'song', key: String(cur) }; applyMixer(); player.playSegments(p.song.map(n => sceneParts(p, n)), p.bpm, { once: !songLoop }); render(); }
     }
     else playScene(+pl.dataset.scene, true);
     return;
