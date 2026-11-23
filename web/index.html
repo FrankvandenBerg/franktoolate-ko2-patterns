@@ -309,6 +309,26 @@ body.view-sounds #vu,body.view-sounds #vuOpen{display:none}
 .snd-edit{border:0;background:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0 4px;opacity:.6}
 .snd-edit:hover{opacity:1;color:var(--ink)}
 .sname-in{font:inherit;font-size:13px;padding:2px 6px;border:1px solid var(--ink);border-radius:4px;width:100%}
+#help{position:fixed;top:0;right:0;bottom:0;width:min(420px,100vw);z-index:60;background:var(--panel);border-left:1px solid var(--line);box-shadow:-8px 0 30px rgba(0,0,0,.12);display:flex;flex-direction:column}
+#help .hh{display:flex;align-items:center;gap:10px;padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+#help .hh strong{font-size:17px;flex:1}
+#help .hh button{border:0;background:none;font-size:18px;cursor:pointer;color:var(--muted)}
+#help .hq{margin:10px 16px;position:relative}
+#help .hq input{width:100%;box-sizing:border-box;font:inherit;font-size:14px;padding:9px 30px 9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+#help .hq button{position:absolute;right:6px;top:7px;border:0;background:none;color:var(--muted);cursor:pointer}
+#help .hl{overflow:auto;padding:0 16px 24px;flex:1}
+#help details{border-bottom:1px solid var(--line);padding:8px 0}
+#help summary{cursor:pointer;font-weight:700;font-size:14px;list-style:none;display:flex;gap:8px;align-items:baseline}
+#help summary::-webkit-details-marker{display:none}
+#help summary .ht{font:500 10px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+#help .hb{font-size:13px;line-height:1.55;color:var(--ink);margin-top:6px}
+#help .hb p{margin:6px 0}
+#help .hb ul,#help .hb ol{margin:6px 0;padding-left:18px}
+#help mark{background:color-mix(in srgb,var(--orange) 30%,transparent);color:inherit;border-radius:2px}
+#help kbd,.helpbtn{font-family:var(--mono)}
+#help kbd{border:1px solid var(--line);border-radius:3px;padding:0 4px;font-size:11px;background:var(--bg)}
+.helpbtn{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-weight:700;cursor:pointer;flex:none}
+.helpbtn:hover{border-color:var(--ink)}
 .legal{border-top:1px solid var(--line);padding-top:14px;font-size:12px;color:var(--muted);line-height:1.6}
 .legal a{color:inherit}
 </style>
@@ -326,6 +346,7 @@ body.view-sounds #vu,body.view-sounds #vuOpen{display:none}
       <span class="conn-pill" id="meta" data-state="off"><i></i><span>not connected</span></span>
       <button class="btn small" id="connect">Connect K.O. II</button>
     </div>
+    <button class="helpbtn" id="helpOpen" title="How to… (press ?)" aria-label="Open the how-to">?</button>
     <div class="usermenu" id="userSlot"><!--user-menu--></div>
   </div>
 </header>
@@ -1568,6 +1589,72 @@ function groupForNote(pitch, ch){
   return best;
 }
 drawVuShell();
+// ---- How-to: a searchable help panel (? button in the bar, or press ?) ----
+const HOWTO = [
+  ['Start', 'Connect the K.O. II', `<p>Use Chrome on a computer. Connect the K.O. II with a USB cable, click <b>Connect K.O. II</b> and allow MIDI. The tool then reads all projects and the sound library.</p><p>Without a K.O. II you can still look at backup files: open a <kbd>.tar</kbd> with <b>Open backup</b>.</p>`],
+  ['Projects', 'Switch project', `<p>Switch projects on the K.O. II itself: hold <kbd>MAIN</kbd> and press pad <kbd>1</kbd>–<kbd>9</kbd>. The tool follows. The active project is shown in orange.</p>`],
+  ['Projects', 'Refresh after recording', `<p>When you record on the K.O. II, the tool reads the project again after you press stop. Use <b>↻ refresh</b> to read it yourself at any time.</p>`],
+  ['Scenes', 'Pick and play a scene', `<p>Click a scene to open it. <b>▶ play scene</b> plays it from the tool (it sends MIDI notes to the K.O. II). Arrow keys <kbd>←</kbd>/<kbd>→</kbd> switch scene, <kbd>space</kbd> plays or stops.</p>`],
+  ['Scenes', 'Follow the K.O. II', `<p>Press play on the K.O. II: the tool shows playheads and lights the notes that sound. It recognises the scene by the notes it hears (the K.O. II does not report scene or group changes). Scenes that sound exactly the same cannot be told apart.</p><p>While the K.O. II plays, the tool's controls are greyed out; the <b>notes</b> buttons still work, so you can open piano rolls.</p>`],
+  ['Scenes', 'Change or clear a scene', `<p>Pick another pattern for a group in the scene, or use <b>✕ clear scene</b> (optionally with its patterns). Click a scene or pattern and press <kbd>Delete</kbd> to remove it. Changes are staged until you write them.</p>`],
+  ['Patterns', 'Move or swap patterns', `<p>Drag a pattern onto another pattern to swap them, or onto a group to move it there. Scenes follow along.</p>`],
+  ['Notes', 'Edit notes', `<p>Open a group's piano roll with <b>▸ notes</b> and click <b>✎ edit notes</b>.</p><ul><li>Click an empty spot to add a note; press and drag right for a longer one.</li><li>Drag a note to move it (also to another pad); drag its right edge to change its length.</li><li>Select a note and press <kbd>Delete</kbd> to remove it. Hold <kbd>Alt</kbd> to leave the 1/16 grid.</li></ul>`],
+  ['Notes', 'Pitch (melodies)', `<p>Pads with pitched notes show pitch rows with note names. Click <b>♪ pitch</b> on any pad to show them. Click in a row, or drag a note up/down, to set its pitch. <kbd>↑</kbd>/<kbd>↓</kbd> change the pitch of the selected note (<kbd>Shift</kbd> = octave).</p><p>To hear pitches from the tool, a pad needs its own MIDI channel; the tool gives melody pads one automatically.</p>`],
+  ['Mixer', 'Mute and solo groups', `<p>Turn groups on/off with keys <kbd>A</kbd>–<kbd>D</kbd>; hold <kbd>S</kbd> and press a group key to solo it. This only changes what the tool plays; nothing is written.</p>`],
+  ['Song', 'The song timeline', `<p>The blue Song section shows each position as a block (Scene 1, S2…), as long as it really lasts on the K.O. II. A position ends when the longest pattern of its scene comes round again, so it can be shorter when that pattern was already part-way.</p><p>Click a block to open that scene.</p>`],
+  ['Song', 'Play the song (loop)', `<p><b>▶ play song</b> plays the song from the tool once. Turn on <b>loop</b> (the button with the loop icon) to start again at position 1. Pressing play on the K.O. II stops the tool's own playback.</p>`],
+  ['Song', 'Edit the song', `<p>Change the scene per position, move positions with ◀ ▶, remove with ✕ or add with <b>+ add position</b>. On the K.O. II: hold <kbd>MAIN</kbd> and press <kbd>ENTER</kbd> for the song editor. A new project has no song; scenes work fine without one.</p>`],
+  ['Writing', 'Write changes to the K.O. II', `<p>Changes appear in the floating window bottom right. Click <b>Write to K.O. II</b> to write them, <b>Undo all</b> to drop them, or <b>Download</b> to save a .tar. Turn on <b>Write changes automatically</b> to skip the button.</p>`],
+  ['Writing', 'Backups and restore', `<p>Before every write the tool stores a backup of the project on the server (the newest 25 per project). Open <b>backups</b> on a project to download one or restore it (restore is a change you then write).</p>`],
+  ['Levels', 'Level meters', `<p>The small <b>levels</b> window (bottom left) shows a meter per group in the group colours. It moves on the notes and their velocity, from the K.O. II or the tool. Hide it with ✕ and bring it back with <b>▮▮ levels</b>.</p>`],
+  ['Sounds', 'Browse and play sounds', `<p>The <b>Sounds</b> tab shows all sounds as tiles, grouped by kind. Click the coloured part of a tile to play it on the K.O. II. Search by name or slot (✕ clears the search) or filter by kind, used or unused.</p>`],
+  ['Sounds', 'Rename a sound', `<p>Click ✎ next to a name, type the new name (max 16 characters) and press <kbd>Enter</kbd> (<kbd>Esc</kbd> cancels). The name changes on the K.O. II itself.</p>`],
+  ['Sounds', 'Move a sound to another group', `<p>Drag a tile onto another group, or click <b>⇄ move</b>. The sound moves to an empty slot in that group's range, and every pad that uses it, in every project, is updated. Projects are backed up first; the old slot is only cleared when everything checked out.</p>`],
+  ['Sounds', 'Share a sound', `<p>Your own sounds (slots 700 and up) have <b>↗ share</b>. Others see your name, not your e-mail address. Only share sounds you made or may share. Remove a shared sound with ✕ under <b>Shared by everyone</b>.</p>`],
+  ['Sounds', 'Get a shared sound', `<p>Under <b>Shared by everyone</b>, ▶ plays a sound in the browser. <b>⬇ to my K.O. II</b> puts it in an empty slot (700–999), so nothing is replaced.</p>`],
+  ['Limits', 'What the tool cannot do', `<p>Some things are not possible, because the K.O. II does not offer them over USB:</p><ul>
+    <li><b>Group and scene changes are not reported.</b> When you press A–D or switch scene on the K.O. II, it sends nothing. The tool guesses the scene from the notes it hears and cannot follow the selected group at all.</li>
+    <li><b>Identical scenes</b> sound the same, so the tool cannot tell which one is playing (in a song it can, from the timing).</li>
+    <li><b>Projects are switched on the K.O. II only</b> (<kbd>MAIN</kbd> + pad), not from the tool.</li>
+    <li><b>The levels are not audio.</b> The K.O. II sends no sound over USB; the meters move on MIDI notes and velocity. Effects, filters and sample volume are not included.</li>
+    <li><b>No live note changes from the device:</b> after recording, the project is read again only when you press stop.</li>
+    <li><b>Pitched notes</b> only sound at their pitch from the tool when the pad has its own MIDI channel.</li>
+    <li><b>Factory sounds (slots below 700) cannot be shared</b>; they belong to Teenage Engineering.</li>
+    <li><b>Only Chrome or Edge on a computer.</b> Safari and iPhone/iPad have no Web MIDI, so they cannot connect to the K.O. II.</li>
+    <li><b>Another MIDI program</b> on the computer that talks to the K.O. II can take over its messages; the tool asks again every 20 seconds.</li>
+  </ul>`],
+  ['Account', 'Sign in, passkeys and source code', `<p>You sign in with a passkey. Manage passkeys under your name (top right) → <b>Account & passkeys</b>. The tool is open source (AGPL-3.0); the link is in the same menu.</p>`],
+];
+let helpQuery = '';
+function drawHelp(){
+  let el = $('#help');
+  if (!el) {
+    el = document.createElement('aside'); el.id = 'help'; el.setAttribute('aria-label', 'How to'); el.hidden = true;
+    el.innerHTML = `<div class="hh"><strong>How to…</strong><button id="helpClose" aria-label="Close the how-to">✕</button></div>
+      <div class="hq"><input id="helpQ" type="search" placeholder="Search, e.g. loop, pitch, share" aria-label="Search the how-to"><button id="helpQClear" aria-label="Clear the search" hidden>✕</button></div><div class="hl" id="helpList"></div>`;
+    document.body.appendChild(el);
+  }
+  const q = helpQuery.trim().toLowerCase(), words = q.split(/\s+/).filter(Boolean);
+  const text = h => h.replace(/<[^>]+>/g, ' ');
+  const hits = HOWTO.filter(([tag, title, body]) => words.every(w => (tag + ' ' + title + ' ' + text(body)).toLowerCase().includes(w)));
+  const mark = h => !words.length ? h : h.replace(/(>[^<]*)/g, seg => words.reduce((t, w) => t.replace(new RegExp('(' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig'), '<mark>$1</mark>'), seg));
+  $('#helpList').innerHTML = hits.length ? hits.map(([tag, title, body]) => `<details${words.length ? ' open' : ''}><summary><span class="ht">${tag}</span><span>${mark('>' + title).slice(1)}</span></summary><div class="hb">${mark(body)}</div></details>`).join('')
+    : `<p class="none">Nothing found for "${esc(helpQuery)}".</p>`;
+  $('#helpQClear').hidden = !q;
+}
+function openHelp(){ drawHelp(); $('#help').hidden = false; const q = $('#helpQ'); q.value = helpQuery; q.focus(); }
+document.addEventListener('click', ev => {
+  if (!ev.target.closest) return;
+  if (ev.target.closest('#helpOpen')) { const h = $('#help'); if (h && !h.hidden) h.hidden = true; else openHelp(); }
+  else if (ev.target.closest('#helpClose')) $('#help').hidden = true;
+  else if (ev.target.closest('#helpQClear')) { helpQuery = ''; $('#helpQ').value = ''; drawHelp(); $('#helpQ').focus(); }
+});
+document.addEventListener('input', ev => { if (ev.target.id === 'helpQ') { helpQuery = ev.target.value; drawHelp(); } });
+document.addEventListener('keydown', ev => {
+  const h = $('#help');
+  if (ev.key === 'Escape' && h && !h.hidden) { h.hidden = true; return; }
+  if (ev.key === '?' && !ev.target.closest('input,select,textarea')) { ev.preventDefault(); openHelp(); }
+});
 function onDeviceMidi(d){
   const st = d[0];
   if ((st === 0xFA || st === 0xFB) && dev) dev.abortGet = true;   // stop any background read right away
