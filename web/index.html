@@ -383,7 +383,7 @@ function render(){
     <span class="stat"><b>${p.bpm ?? '–'}</b> BPM</span>
     <span class="stat"><b>${p.scenes.length}</b> scene${p.scenes.length === 1 ? '' : 's'}</span>
     <span class="stat"><b>${p.pats.filter(x => x.notes).length}</b> patterns with notes</span>
-    ${dev && p.node && deviceActiveNode === p.node ? '<span class="pill live">● active on the K.O. II</span>' : ''}
+    ${dev && p.node && deviceActiveNode === p.node ? '<span class="pill live">● active on the K.O. II</span><button class="play" id="refreshProj" title="Read this project from the K.O. II again">↻ refresh</button>' : ''}
     ${KO_BASE !== null ? '<button class="play" id="openBackups" title="Backups stored on the server">backups</button>' : ''}
     ${dev && p.node && channelPlan(p).assign.length ? `<button class="play" id="assignCh" title="Melody pads need their own MIDI channel for the tool to play their pitches">give ${channelPlan(p).assign.length} melody pad${channelPlan(p).assign.length === 1 ? '' : 's'} a MIDI channel…</button>` : ''}</div>`;
   drawPending(p);
@@ -1092,7 +1092,7 @@ async function toggleSound(node){
 // The device does not announce pattern changes, so the tool reads the active project again once, shortly
 // after playback stops. A read is aborted as soon as the device starts playing again, so it never slows it down.
 const sync = { busy: false, timer: null, last: 0 };
-async function syncActive(reason){
+async function syncActive(reason, attempt = 0){
   if (!dev || sync.busy || follow.running || playing || drag) return;
   const i = DATA.findIndex(p => p.node && p.node === deviceActiveNode); if (i < 0) return;
   const p = DATA[i];
@@ -1109,10 +1109,15 @@ async function syncActive(reason){
     if (DATA[i].scenes.some(sc => sc[0] === keep.selScene)) selScene = keep.selScene;
     status(`Updated project ${p.p} from the K.O. II${reason ? ' (' + reason + ')' : ''}.`);
     if (i === cur) render();
-  } catch (e) { /* device busy: try again later */ }
+  } catch (e) {
+    // Right after stop the K.O. II may still be saving and not answer: try again a bit later.
+    if (e && e.message !== 'read aborted' && attempt < 3) { clearTimeout(sync.timer); sync.timer = setTimeout(() => syncActive(reason, attempt + 1), 2500 * (attempt + 1)); }
+  }
   finally { sync.busy = false; }
 }
 function startSync(){ clearInterval(sync.timer); }
+// coming back to the tab (e.g. after recording on the device) also reads the active project once
+window.addEventListener('focus', () => { if (dev && !follow.running) syncActive('back in the tool'); });
 // Small "Syncing…" window while the tool reads from or writes to the K.O. II.
 let syncToastTimer = null;
 function showSyncing(kind){
@@ -1254,6 +1259,7 @@ function playSelected(){
 document.addEventListener('click', ev => {
   if (ev.target.closest('#mvGo')) { applyMove($('#mvFrom').value, $('#mvG').value, +$('#mvN').value); return; }
   if (ev.target.closest('#writeProj')) { writeProject(); return; }
+  if (ev.target.closest('#refreshProj')) { syncActive('refresh'); return; }
   if (ev.target.closest('#ppToggle')) { pendingOpen = !pendingOpen; drawPending(DATA[cur]); return; }
   if (ev.target.closest('#openBackups')) { openBackups(); return; }
   if (ev.target.closest('#assignCh')) { askAssignChannels(); return; }
