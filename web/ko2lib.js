@@ -1,6 +1,12 @@
-// KO2 / EP-133 read-only access over Web MIDI sysex + project parsing.
-// Based on the protocol implementation in github.com/phones24/ep133-export-to-daw (AGPL-3.0).
+// KO2 / EP-133 access over Web MIDI sysex + project parsing.
 // SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Third-party code: the device protocol layer in this file (TE sysex message framing, 7-bit packing and
+// unpacking, greet, file init, directory listing and file download, i.e. the KO2 class's req/greet/fsInit/
+// ls/get and pack7/unpack7) is adapted from ep133-export-to-daw by phones24 (Yura V),
+// https://github.com/phones24/ep133-export-to-daw, licensed under the GNU AGPL v3.0.
+// Modified and extended (writing, metadata, deleting, playback, project/scene/song parsing and editing,
+// song timing) by Frank van den Berg, 2026. See CREDITS.md.
 (function (root) {
   const TE = [0x00, 0x20, 0x76];
   const CMD_GREET = 1, CMD_FILE = 5;

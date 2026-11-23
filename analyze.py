@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Uses ko2fs.py (protocol adapted from phones24/ep133-export-to-daw, AGPL-3.0). See CREDITS.md.
 import os, sys, json, tarfile, struct
 sys.path.insert(0, '.')
 out = {}

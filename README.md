@@ -41,7 +41,15 @@ Web MIDI needs HTTPS and works in Chrome and Edge; Safari does not support Web M
 
 ## Notes
 
-The K.O. II sysex protocol is not officially documented. Reading follows [phones24/ep133-export-to-daw](https://github.com/phones24/ep133-export-to-daw); writing follows the project restore used by Teenage Engineering's own sample tool. Use at your own risk and keep backups.
+The K.O. II sysex protocol is not officially documented. Use at your own risk and keep backups.
+
+## Credits and third-party code
+
+- **[ep133-export-to-daw](https://github.com/phones24/ep133-export-to-daw)** by **phones24 (Yura V)**, GNU AGPL v3.0. The device protocol layer (TE sysex framing, 7-bit packing, greet, file init, listing and downloading files) in `web/ko2lib.js` and `ko2fs.py` is adapted from this project. Everything built on top of it (writing and restoring projects, metadata, sounds, playback, editing, song timing, the web app and server) was added in this repository. Many thanks to phones24 for working out and publishing the protocol.
+- Writing a project follows the restore flow used by Teenage Engineering's own web tool; no Teenage Engineering code is included.
+- Fonts: [Archivo](https://github.com/Omnibus-Type/Archivo) and [IBM Plex Mono](https://github.com/IBM/plex), SIL Open Font License 1.1 (`server/lib/fonts/`).
+
+See `CREDITS.md` for details. This project is licensed under the GNU AGPL v3.0 or later, the same licence as ep133-export-to-daw.
 
 ## License
 

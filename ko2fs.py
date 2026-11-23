@@ -1,5 +1,9 @@
-"""Read-only access to the EP-133 file system over TE sysex.
-Port of the protocol used in phones24/ep133-export-to-daw (greet, file init, list, get)."""
+"""Access to the EP-133 file system over TE sysex.
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+The protocol code (sysex framing, 7-bit packing, greet, file init, list, get) is a Python port of
+ep133-export-to-daw by phones24 (Yura V), https://github.com/phones24/ep133-export-to-daw (AGPL-3.0).
+Modified and extended (put/restore) by Frank van den Berg, 2026. See CREDITS.md."""
 import mido, time, random, struct, sys, json, io, tarfile
 
 PORT = 'EP-133'
