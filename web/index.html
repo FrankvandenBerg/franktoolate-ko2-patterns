@@ -275,9 +275,33 @@ body.ko-playing .wrap :is(.lane,.note,.tl-pos){pointer-events:none}
 #vuOpen{position:fixed;left:16px;bottom:16px;z-index:40;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:4px 10px;font:500 11px var(--mono);cursor:pointer;color:var(--ink)}
 .loopbtn{display:inline-flex;align-items:center;gap:5px}
 .loopbtn svg{display:block}
+body.view-sounds #vu,body.view-sounds #vuOpen{display:none}
+.snd-tabs{display:flex;gap:6px;margin-bottom:14px}
+.snd-tabs button{font:600 13px var(--mono);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:7px 14px;cursor:pointer}
+.snd-tabs button[aria-selected="true"]{background:var(--ink);color:var(--bg,#fff);border-color:var(--ink)}
+.snd-tabs .cnt{opacity:.7;font-weight:400}
+.snd-cat{margin:18px 0 6px}
+.snd-cat h3{display:flex;align-items:baseline;gap:12px;margin:0 0 10px;border-bottom:2px solid hsl(var(--kh) 70% 55%);padding-bottom:6px}
+.snd-cat .cat-name{font-family:var(--display);font-size:16px;font-weight:800;text-transform:capitalize}
+.snd-cat .cat-meta{font:400 11px var(--mono);color:var(--muted)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.tile{position:relative;display:flex;flex-direction:column;gap:4px;border:1px solid var(--line);border-radius:12px;background:hsl(var(--kh,220) 60% 55% / .08);padding:8px;min-height:118px}
+.tile.used{border-color:hsl(var(--kh,220) 60% 50% / .6)}
+.tile.on{box-shadow:0 0 0 2px var(--orange);background:hsl(var(--kh,220) 70% 55% / .2)}
+.tile-hit{display:flex;align-items:center;justify-content:space-between;border:0;border-radius:8px;background:hsl(var(--kh,220) 65% 50% / .85);color:#fff;font:700 15px var(--mono);padding:10px 10px;cursor:pointer;min-height:44px}
+.tile-hit:disabled{opacity:.5;cursor:default}
+.tile-hit .t-play{font-size:16px}
+.tile .t-name{display:flex;align-items:center;gap:2px;font-size:13px;font-weight:600;min-height:20px;word-break:break-word}
+.tile .t-meta{font:400 10.5px var(--mono);color:var(--muted)}
+.tile .t-use{font:400 10.5px var(--mono);color:hsl(var(--kh,220) 60% 38%);min-height:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .t-acts{display:flex;gap:6px;margin-top:auto}
+.t-share{margin-top:auto;align-self:flex-start;font:500 11px var(--mono);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:4px 8px;cursor:pointer}
+.t-share:disabled{opacity:.5;cursor:default}
+.t-share.del{color:var(--orange)}
+.tile.shared{--kh:330}
 .snd-edit{border:0;background:none;cursor:pointer;color:var(--muted);font-size:12px;padding:0 4px;opacity:.6}
 .snd-edit:hover{opacity:1;color:var(--ink)}
-.sname-in{font:inherit;font-size:13px;padding:2px 6px;border:1px solid var(--ink);border-radius:4px;width:12em}
+.sname-in{font:inherit;font-size:13px;padding:2px 6px;border:1px solid var(--ink);border-radius:4px;width:100%}
 .legal{border-top:1px solid var(--line);padding-top:14px;font-size:12px;color:var(--muted);line-height:1.6}
 .legal a{color:inherit}
 </style>
@@ -403,6 +427,7 @@ $('#tarfiles').addEventListener('change', async ev => {
 function render(){
   if (!DATA.length) return;
   const vt = $('#viewTabs'); if (vt) vt.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view));
+  document.body.classList.toggle('view-sounds', view === 'sounds');
   if (view === 'sounds') { $('#intro').hidden = true; $('#projects').hidden = true; drawPending(null); renderSounds(); return; }
   if (cur >= DATA.length) cur = 0;
   $('#intro').hidden = true;
@@ -1152,36 +1177,147 @@ function soundUsage(){
 }
 const SOUND_KINDS = [[0, 'kicks'], [100, 'snares'], [200, 'hats & cymbals'], [300, 'claps & percussion'], [400, 'bass'], [500, 'melodic'], [600, 'other'], [700, 'user'], [800, 'user'], [900, 'user']];
 function soundKind(slot){ let k = 'other'; for (const [from, name] of SOUND_KINDS) if (slot >= from) k = name; return k; }
+const KIND_HUE = { kicks: 18, snares: 45, 'hats & cymbals': 190, 'claps & percussion': 280, bass: 150, melodic: 220, other: 0, user: 330 };
+let soundsTab = 'device', shared = null, previewing = null;
+const fmtSlot = n => String(n).padStart(3, '0');
+const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+// Your own sounds live in the user slots (700 and up); factory sounds can't be shared.
+const canShare = x => x.slot >= 700;
 function renderSounds(){
   const card = $('#project'); card.hidden = false;
+  const tabs = `<div class="snd-tabs" role="tablist"><button role="tab" data-stab="device" aria-selected="${soundsTab === 'device'}">On my K.O. II</button><button role="tab" data-stab="shared" aria-selected="${soundsTab === 'shared'}">Shared by everyone${shared ? ` <span class="cnt">${shared.length}</span>` : ''}</button></div>`;
+  if (soundsTab === 'shared') { card.innerHTML = tabs + sharedHtml(); if (!shared) loadShared(); return; }
   const use = soundUsage();
   const q = soundsQuery.trim().toLowerCase();
-  const list = sounds.filter(x => (!q || (x.name || '').toLowerCase().includes(q) || String(x.slot).padStart(3, '0').includes(q))
+  const list = sounds.filter(x => (!q || (x.name || '').toLowerCase().includes(q) || fmtSlot(x.slot).includes(q))
     && (soundsFilter === 'all' || (soundsFilter === 'used' ? use[x.slot] : soundsFilter === 'unused' ? !use[x.slot] : soundKind(x.slot) === soundsFilter)));
   const total = sounds.reduce((a, x) => a + x.seconds, 0);
   const kinds = [...new Set(SOUND_KINDS.map(k => k[1]))];
-  let h = `<div class="ph"><h2>Sounds</h2><span class="stat"><b>${sounds.length}</b> sounds</span><span class="stat"><b>${Math.round(total)}</b> s in total</span><span class="stat"><b>${sounds.filter(x => use[x.slot]).length}</b> used on pads</span></div>`;
+  let h = tabs + `<div class="ph"><h2>Sounds</h2><span class="stat"><b>${sounds.length}</b> sounds</span><span class="stat"><b>${Math.round(total)}</b> s in total</span><span class="stat"><b>${sounds.filter(x => use[x.slot]).length}</b> used on pads</span></div>`;
   if (!sounds.length) { card.innerHTML = h + `<p class="none">Connect the K.O. II to read its sound library.</p>`; return; }
-  h += `<div class="edit"><label>Search <input id="sndQ" type="text" value="${soundsQuery.replace(/"/g, '&quot;')}" placeholder="name or slot" style="width:14em"></label>
+  h += `<div class="edit"><label>Search <input id="sndQ" type="text" value="${esc(soundsQuery)}" placeholder="name or slot" style="width:14em"></label>
     <label>Show <select id="sndF">${['all', 'used', 'unused', ...kinds].map(k => `<option value="${k}"${k === soundsFilter ? ' selected' : ''}>${k}</option>`).join('')}</select></label>
-    <span class="stat">${list.length} shown · ▶ plays the sound on the K.O. II</span></div>`;
-  // group under a header per category, in slot order
+    <span class="stat">${list.length} shown · click a tile to hear it on the K.O. II</span></div>`;
   const groups = [];
-  for (const x of list) { const k = soundKind(x.slot); let g = groups[groups.length - 1]; if (!g || g.kind !== k) groups.push(g = { kind: k, items: [] }); g.items.push(x); }
-  const merged = []; for (const g of groups) { const m = merged.find(z => z.kind === g.kind); if (m) m.items.push(...g.items); else merged.push(g); }
-  const row = x => `<tr><td><button class="play" data-snd="${x.node}" aria-pressed="${playingSound === x.node}" ${dev ? '' : 'disabled'} title="Play on the K.O. II">${playingSound === x.node ? '■' : '▶'}</button></td>
-      <td class="mono">${String(x.slot).padStart(3, '0')}</td><td class="sname">${editingSound === x.node
-        ? `<input class="sname-in" data-sname="${x.node}" maxlength="16" value="${(x.name || '').replace(/"/g, '&quot;')}" aria-label="Name of sound ${x.slot}"> <span class="stat">Enter = save · Esc = cancel</span>`
-        : `${x.name ? x.name.replace(/</g, '&lt;') : '<span class="none">(no name)</span>'}${dev ? ` <button class="snd-edit" data-sedit="${x.node}" title="Rename this sound on the K.O. II" aria-label="Rename sound ${x.slot}">✎</button>` : ''}`}</td>
-      <td class="mono">${x.seconds.toFixed(2)} s</td><td class="mono">${x.channels === 2 ? 'stereo' : 'mono'}</td><td class="mono">${x.mode}</td>
-      <td class="mono">${(use[x.slot] || []).join(', ')}</td></tr>`;
-  h += `<div class="tbl"><table class="snd"><thead><tr><th></th><th>slot</th><th>name</th><th>length</th><th></th><th>mode</th><th>used on</th></tr></thead>` +
-    merged.map(g => {
-      const used = g.items.filter(x => use[x.slot]).length, secs = g.items.reduce((a, x) => a + x.seconds, 0);
-      return `<tbody><tr class="cat"><th colspan="7"><span class="cat-name">${g.kind}</span><span class="cat-meta">${g.items.length} sound${g.items.length === 1 ? '' : 's'} · ${used} used · ${Math.round(secs)} s · slots ${String(g.items[0].slot).padStart(3, '0')}–${String(g.items[g.items.length - 1].slot).padStart(3, '0')}</span></th></tr>` + g.items.map(row).join('') + `</tbody>`;
-    }).join('') + `</table></div>`;
+  for (const x of list) { const k = soundKind(x.slot); let g = groups.find(z => z.kind === k); if (!g) groups.push(g = { kind: k, items: [] }); g.items.push(x); }
+  const tile = x => {
+    const on = playingSound === x.node, used = use[x.slot] || [];
+    return `<div class="tile${on ? ' on' : ''}${used.length ? ' used' : ''}">
+      <button class="tile-hit" data-snd="${x.node}" ${dev ? '' : 'disabled'} aria-pressed="${on}" title="${dev ? 'Play on the K.O. II' : 'Connect the K.O. II to play'}"><span class="t-play">${on ? '■' : '▶'}</span><span class="t-slot">${fmtSlot(x.slot)}</span></button>
+      <div class="t-name">${editingSound === x.node
+        ? `<input class="sname-in" data-sname="${x.node}" maxlength="16" value="${esc(x.name || '')}" aria-label="Name of sound ${x.slot}">`
+        : `<span>${x.name ? esc(x.name) : '<span class="none">(no name)</span>'}</span>${dev ? `<button class="snd-edit" data-sedit="${x.node}" title="Rename this sound on the K.O. II" aria-label="Rename sound ${x.slot}">✎</button>` : ''}`}</div>
+      <div class="t-meta">${x.seconds.toFixed(2)} s · ${x.channels === 2 ? 'stereo' : 'mono'}${x.mode ? ' · ' + x.mode : ''}</div>
+      <div class="t-use" title="${used.join(', ')}">${used.length ? '● ' + used.slice(0, 2).join(', ') + (used.length > 2 ? ' +' + (used.length - 2) : '') : ''}</div>
+      ${canShare(x) && dev ? `<button class="t-share" data-share="${x.node}" title="Share this sound with everyone who uses the tool">↗ share</button>` : ''}
+    </div>`;
+  };
+  h += groups.map(g => {
+    const used = g.items.filter(x => use[x.slot]).length, secs = g.items.reduce((a, x) => a + x.seconds, 0);
+    return `<section class="snd-cat" style="--kh:${KIND_HUE[g.kind] ?? 0}"><h3><span class="cat-name">${g.kind}</span><span class="cat-meta">${g.items.length} sound${g.items.length === 1 ? '' : 's'} · ${used} used · ${Math.round(secs)} s</span></h3><div class="tiles">${g.items.map(tile).join('')}</div></section>`;
+  }).join('');
   card.innerHTML = h;
 }
+function sharedHtml(){
+  let h = `<div class="ph"><h2>Shared sounds</h2><span class="stat">Sounds other people made and shared. Listen here, then put them on your K.O. II.</span></div>`;
+  if (shared === null) return h + `<p class="stat">Loading…</p>`;
+  if (shared.error) return h + `<p class="err">${esc(shared.error)}</p>`;
+  if (!shared.length) return h + `<p class="none">Nothing shared yet. Share one of your own sounds (slots 700 and up) from the "On my K.O. II" tab.</p>`;
+  return h + `<div class="tiles">${shared.map(x => `<div class="tile shared${previewing === x.id ? ' on' : ''}">
+      <button class="tile-hit" data-preview="${x.id}" aria-pressed="${previewing === x.id}" title="Listen in the browser"><span class="t-play">${previewing === x.id ? '■' : '▶'}</span><span class="t-slot">${x.seconds} s</span></button>
+      <div class="t-name"><span>${esc(x.name)}</span></div>
+      <div class="t-meta">${x.channels === 2 ? 'stereo' : 'mono'} · by ${esc(x.mine ? 'you' : x.owner)} · ${x.downloads}× taken</div>
+      <div class="t-acts"><button class="t-share" data-import="${x.id}" ${dev ? '' : 'disabled'} title="${dev ? 'Put this sound on your K.O. II' : 'Connect the K.O. II first'}">⬇ to my K.O. II</button>${x.mine ? `<button class="t-share del" data-unshare="${x.id}" title="Stop sharing">✕</button>` : ''}</div>
+    </div>`).join('')}</div>`;
+}
+async function loadShared(){
+  try { shared = (await api('api/shared')).sounds; }
+  catch (e) { shared = []; shared.error = e.message === 'offline' ? 'Shared sounds live on the server; this local copy of the tool has none.' : 'Could not load the shared sounds: ' + e.message; }
+  if (view === 'sounds') renderSounds();
+}
+// Listen to a shared sound in the browser: the file is raw 16-bit PCM.
+let previewSrc = null, audioCtx = null;
+async function previewShared(id){
+  try { if (previewSrc) previewSrc.stop(); } catch {}
+  if (previewing === id) { previewing = null; renderSounds(); return; }
+  const x = shared.find(s => s.id === id); if (!x) return;
+  previewing = id; renderSounds();
+  try {
+    const bytes = x.pcm || (x.pcm = await api(`api/shared/${id}`, {}, 'bytes'));
+    audioCtx = audioCtx || new AudioContext();
+    const ch = x.channels || 1, frames = Math.floor(bytes.length / 2 / ch), dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const buf = audioCtx.createBuffer(ch, Math.max(1, frames), x.samplerate || 46875);
+    for (let c = 0; c < ch; c++) { const d = buf.getChannelData(c); for (let i = 0; i < frames; i++) d[i] = dv.getInt16((i * ch + c) * 2, true) / 32768; }
+    previewSrc = audioCtx.createBufferSource(); previewSrc.buffer = buf; previewSrc.connect(audioCtx.destination);
+    previewSrc.onended = () => { if (previewing === id) { previewing = null; if (view === 'sounds') renderSounds(); } };
+    previewSrc.start();
+  } catch (e) { previewing = null; status('Could not play the sound: ' + (e.message || e), true); renderSounds(); }
+}
+function askShare(node){
+  const x = sounds.find(s => s.node === node); if (!x) return;
+  if (!x.name) { status('Give the sound a name first (✎), then share it.', true); return; }
+  modal(`Share "${esc(x.name)}"`, `<p>Everyone who uses this tool can then listen to it and put it on their own K.O. II. They see your name (not your e-mail address).</p>
+    <p class="stat">Only share sounds you made yourself or are allowed to share. You can stop sharing it at any time.</p>
+    <div class="row"><button class="btn small" id="doShare" data-node="${node}">Share with everyone</button><button class="btn small sec" data-modal-close>Cancel</button></div>`);
+}
+async function shareSound(node){
+  const x = sounds.find(s => s.node === node); closeModal(); if (!x || !dev) return;
+  try {
+    status(`Reading sound ${fmtSlot(x.slot)} from the K.O. II…`);
+    const meta = await dev.metadata(node);
+    const pcm = await dev.get(node);
+    status('Uploading…');
+    await api('api/shared', { method: 'POST', body: pcm, headers: { 'Content-Type': 'application/octet-stream', 'X-Sound-Meta': JSON.stringify(meta) } });
+    shared = null;
+    status(`"${x.name}" is now shared. You find it under "Shared by everyone".`);
+  } catch (e) { status('Could not share the sound: ' + (e.message || e), true); }
+}
+function freeSlots(){ const taken = new Set(sounds.map(s => s.slot)); const out = []; for (let n = 700; n <= 999; n++) if (!taken.has(n)) out.push(n); return out; }
+function askImport(id){
+  const x = shared.find(s => s.id === id); if (!x) return;
+  const free = freeSlots();
+  if (!free.length) { modal('No free slot', '<p>All user slots (700–999) on your K.O. II are taken. Delete a sound on the device first.</p>'); return; }
+  modal(`Put "${esc(x.name)}" on your K.O. II`, `<p>The sound goes into an empty slot, so nothing on your K.O. II is replaced.</p>
+    <label>Slot <select id="impSlot">${free.slice(0, 300).map(n => `<option value="${n}">${fmtSlot(n)}</option>`).join('')}</select></label>
+    <div class="row"><button class="btn small" id="doImport" data-id="${id}">Put it on the K.O. II</button><button class="btn small sec" data-modal-close>Cancel</button></div>`);
+}
+async function importShared(id, slot){
+  const x = shared.find(s => s.id === id); closeModal(); if (!x || !dev) return;
+  if (sounds.some(s => s.slot === slot)) { status(`Slot ${fmtSlot(slot)} is not empty.`, true); return; }
+  try {
+    status(`Downloading "${x.name}"…`);
+    const pcm = x.pcm || (x.pcm = await api(`api/shared/${id}`, {}, 'bytes'));
+    status(`Putting "${x.name}" in slot ${fmtSlot(slot)} on the K.O. II…`);
+    await dev.fsInit();
+    await dev.put(pcm, fmtSlot(slot) + '.pcm', sndDirNode, slot);
+    const meta = { ...x.meta, name: (x.meta.name || x.name).slice(0, 16) }; delete meta.crc;
+    await dev.setMetadata(slot, meta);
+    const m = await dev.metadata(slot), ch = m.channels || 1, sr = m.samplerate || 46875;
+    sounds.push({ slot, node: slot, size: pcm.length, name: m.name || '', seconds: Math.round(pcm.length / (2 * ch * sr) * 100) / 100, channels: ch, mode: m['sound.playmode'] || '' });
+    sounds.sort((a, b) => a.slot - b.slot); applySoundNames();
+    try { await api('api/sounds?device=' + encodeURIComponent(deviceSerial), { method: 'POST', body: JSON.stringify({ sounds }) }); } catch {}
+    x.downloads++;
+    status(`"${x.name}" is now in slot ${fmtSlot(slot)} on your K.O. II.`);
+  } catch (e) { status('Could not put the sound on the K.O. II: ' + (e.message || e), true); }
+  renderSounds();
+}
+async function unshare(id){
+  const x = shared.find(s => s.id === id); if (!x || !confirm(`Stop sharing "${x.name}"? People who already took it keep their copy.`)) return;
+  try { await api(`api/shared/${id}`, { method: 'DELETE' }); shared = shared.filter(s => s.id !== id); status(`"${x.name}" is no longer shared.`); }
+  catch (e) { status('Could not stop sharing: ' + (e.message || e), true); }
+  renderSounds();
+}
+document.addEventListener('click', ev => {
+  const t = ev.target.closest && ev.target; if (!t) return;
+  let b;
+  if ((b = t.closest('[data-stab]'))) { soundsTab = b.dataset.stab; if (soundsTab === 'shared') shared = null; renderSounds(); }
+  else if ((b = t.closest('[data-share]'))) askShare(+b.dataset.share);
+  else if ((b = t.closest('#doShare'))) shareSound(+b.dataset.node);
+  else if ((b = t.closest('[data-preview]'))) previewShared(+b.dataset.preview);
+  else if ((b = t.closest('[data-import]'))) askImport(+b.dataset.import);
+  else if ((b = t.closest('#doImport'))) importShared(+b.dataset.id, +$('#impSlot').value);
+  else if ((b = t.closest('[data-unshare]'))) unshare(+b.dataset.unshare);
+});
 // Renaming a sound changes its name on the K.O. II itself (sound metadata "name"; other settings are kept).
 let editingSound = null;
 async function renameSound(node, raw){

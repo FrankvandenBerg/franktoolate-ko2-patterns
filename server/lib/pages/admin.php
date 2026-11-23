@@ -86,7 +86,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 $msg = 'Sign-in link sent to ' . $t['email'] . '.';
             } elseif ($action === 'delete') {
                 if (empty($_POST['confirm'])) throw new RuntimeException('Tick "sure" to delete an account.');
-                foreach (['ko_passkeys', 'ko_tokens', 'ko_sound_cache', 'ko_backups'] as $tbl) db()->prepare("DELETE FROM $tbl WHERE user_id = ?")->execute([$id]);
+                $st = db()->prepare('SELECT id FROM ko_shared_sounds WHERE user_id = ?'); $st->execute([$id]);
+                foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $sid) @unlink(KO_HOME . "/data/shared/$sid.pcm");
+                foreach (['ko_passkeys', 'ko_tokens', 'ko_sound_cache', 'ko_backups', 'ko_shared_sounds'] as $tbl) db()->prepare("DELETE FROM $tbl WHERE user_id = ?")->execute([$id]);
                 foreach (glob(KO_HOME . '/data/backups/' . $id . '/*.tar') ?: [] as $f) @unlink($f);
                 @rmdir(KO_HOME . '/data/backups/' . $id);
                 db()->prepare('DELETE FROM ko_users WHERE id = ?')->execute([$id]);

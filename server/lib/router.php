@@ -94,6 +94,64 @@ if ($route === 'api/backups' || preg_match('~^api/backups/(\d+)$~', $route, $bm)
     json_out(['error' => 'Unsupported method.'], 405);
 }
 
+// Shared sounds: every signed-in user can share sounds from their K.O. II and download what others shared.
+if ($route === 'api/shared' || preg_match('~^api/shared/(\d+)$~', $route, $sm)) {
+    $dir = KO_HOME . '/data/shared';
+    $id = isset($sm[1]) ? (int)$sm[1] : 0;
+    if ($id) {
+        $st = db()->prepare('SELECT * FROM ko_shared_sounds WHERE id = ?');
+        $st->execute([$id]);
+        $s = $st->fetch();
+        if (!$s || !is_file("$dir/$id.pcm")) json_out(['error' => 'Sound not found.'], 404);
+        if ($method === 'DELETE') {
+            check_csrf();
+            if ((int)$s['user_id'] !== (int)$u['id'] && !$u['is_admin']) json_out(['error' => 'Only the person who shared it can remove it.'], 403);
+            @unlink("$dir/$id.pcm"); db()->prepare('DELETE FROM ko_shared_sounds WHERE id = ?')->execute([$id]);
+            log_event((int)$u['id'], 'sound_unshared', $s['name']);
+            json_out(['ok' => true]);
+        }
+        db()->prepare('UPDATE ko_shared_sounds SET downloads = downloads + 1 WHERE id = ?')->execute([$id]);
+        header('Content-Type: application/octet-stream');
+        header('Cache-Control: no-store');
+        readfile("$dir/$id.pcm");
+        exit;
+    }
+    if ($method === 'GET') {
+        $rows = db()->query('SELECT s.id, s.user_id, s.name, s.meta, s.channels, s.samplerate, s.seconds, s.size, s.downloads, s.created_at, u.name AS owner FROM ko_shared_sounds s LEFT JOIN ko_users u ON u.id = s.user_id ORDER BY s.id DESC LIMIT 500')->fetchAll();
+        foreach ($rows as &$r) {
+            $r['mine'] = (int)$r['user_id'] === (int)$u['id'];
+            $r['owner'] = $r['owner'] ?: 'someone';          // display name only, never the e-mail address
+            $r['meta'] = json_decode($r['meta'], true) ?: [];
+            unset($r['user_id']);
+        }
+        json_out(['sounds' => $rows]);
+    }
+    if ($method === 'POST') {
+        check_csrf();
+        $data = (string)file_get_contents('php://input');
+        if (strlen($data) < 64 || strlen($data) > 16 * 1024 * 1024) json_out(['error' => 'That does not look like a sound.'], 400);
+        $meta = json_decode((string)($_SERVER['HTTP_X_SOUND_META'] ?? ''), true);
+        if (!is_array($meta)) json_out(['error' => 'Missing sound settings.'], 400);
+        $keep = [];
+        foreach ($meta as $k => $v) if (is_string($k) && preg_match('~^[a-z][a-z0-9_.]{0,40}$~', $k) && (is_scalar($v) || $v === null) && $k !== 'crc') $keep[$k] = is_string($v) ? mb_substr($v, 0, 60) : $v;
+        $name = trim(preg_replace('~[^\x20-\x7e]~', '', (string)($keep['name'] ?? '')));
+        if ($name === '') json_out(['error' => 'Give the sound a name first.'], 400);
+        $name = mb_substr($name, 0, 40); $keep['name'] = mb_substr($name, 0, 16);
+        $ch = max(1, min(2, (int)($keep['channels'] ?? 1))); $sr = max(8000, min(96000, (int)($keep['samplerate'] ?? 46875)));
+        $sha = hash('sha256', $data);
+        $st = db()->prepare('SELECT id FROM ko_shared_sounds WHERE user_id = ? AND sha256 = ?'); $st->execute([$u['id'], $sha]);
+        if ($st->fetchColumn()) json_out(['error' => 'You already shared this sound.'], 409);
+        if (!is_dir($dir) && !mkdir($dir, 0700, true)) json_out(['error' => 'Could not create the folder for shared sounds.'], 500);
+        db()->prepare('INSERT INTO ko_shared_sounds (user_id, name, meta, channels, samplerate, seconds, size, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            ->execute([$u['id'], $name, json_encode($keep), $ch, $sr, round(strlen($data) / (2 * $ch * $sr), 2), strlen($data), $sha, now()]);
+        $newId = (int)db()->lastInsertId();
+        if (file_put_contents("$dir/$newId.pcm", $data) === false) { db()->prepare('DELETE FROM ko_shared_sounds WHERE id = ?')->execute([$newId]); json_out(['error' => 'Could not store the sound.'], 500); }
+        log_event((int)$u['id'], 'sound_shared', $name);
+        json_out(['ok' => true, 'id' => $newId]);
+    }
+    json_out(['error' => 'Unsupported method.'], 405);
+}
+
 // Small JSON API for the app (signed-in users only)
 if ($route === 'api/sounds') {
     $device = substr(preg_replace('~[^A-Za-z0-9_-]~', '', (string)($_GET['device'] ?? '')), 0, 64);

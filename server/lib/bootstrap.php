@@ -103,6 +103,20 @@ function migrate(PDO $pdo): void {
         note VARCHAR(190) NOT NULL DEFAULT '',
         created_at DATETIME NOT NULL
     )");
+    // Sounds users share with each other: raw .pcm in data/shared/<id>.pcm, settings as JSON.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS ko_shared_sounds (
+        id $id,
+        user_id INT NOT NULL,
+        name VARCHAR(40) NOT NULL,
+        meta TEXT NOT NULL,
+        channels INT NOT NULL DEFAULT 1,
+        samplerate INT NOT NULL DEFAULT 46875,
+        seconds DECIMAL(8,2) NOT NULL DEFAULT 0,
+        size INT NOT NULL,
+        sha256 CHAR(64) NOT NULL,
+        downloads INT NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL
+    )");
 }
 
 /** Record something a user did, for the admin activity log. */
