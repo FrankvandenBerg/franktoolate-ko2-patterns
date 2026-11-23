@@ -261,7 +261,7 @@ details.lib[open]{display:flex;flex-direction:column;gap:12px}
 .pos button:disabled{opacity:.35;cursor:default}
 .foot{font-size:12px;color:var(--muted);line-height:1.55;max-width:75ch;margin:0}
 /* while the K.O. II itself plays, the tool only watches: controls are faded and can't be used */
-body.ko-playing .wrap :is(button:not(.tl-pos),select,input,label),body.ko-playing #pendingPop :is(button,input,label){opacity:.4;pointer-events:none}
+body.ko-playing .wrap :is(button:not(.tl-pos):not([data-roll]),select,input,label),body.ko-playing #pendingPop :is(button,input,label){opacity:.4;pointer-events:none}
 body.ko-playing .wrap :is(.lane,.note,.tl-pos){pointer-events:none}
 #vu{position:fixed;left:16px;bottom:16px;z-index:40;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.12);padding:8px 10px 8px;font:500 11px var(--mono)}
 #vu .vh{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;color:var(--muted)}
