@@ -1196,7 +1196,11 @@ async function syncActive(reason, attempt = 0){
 }
 function startSync(){ clearInterval(sync.timer); }
 // coming back to the tab (e.g. after recording on the device) also reads the active project once
-window.addEventListener('focus', () => { if (dev && !follow.running) syncActive('back in the tool'); });
+window.addEventListener('focus', () => { if (dev && !follow.running) { resubscribe(); syncActive('back in the tool'); } });
+// The K.O. II reports project switches only to the last program that asked for it (another MIDI tool on the
+// computer can take that over). Ask again now and then while idle, so following project switches keeps working.
+function resubscribe(){ if (dev && !writing && !sync.busy && !follow.running && !playing) dev.fsInit().catch(() => {}); }
+setInterval(resubscribe, 20000);
 // Small "Syncing…" window while the tool reads from or writes to the K.O. II.
 let syncToastTimer = null;
 function showSyncing(kind){
