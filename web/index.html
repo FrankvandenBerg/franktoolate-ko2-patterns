@@ -273,6 +273,8 @@ body.ko-playing .wrap :is(.lane,.note,.tl-pos){pointer-events:none}
 #vu .m b{position:absolute;left:0;right:0;height:2px;bottom:0;background:var(--gc);opacity:.9}
 #vu .m::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 5px,var(--panel) 5px 6px)}
 #vuOpen{position:fixed;left:16px;bottom:16px;z-index:40;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:4px 10px;font:500 11px var(--mono);cursor:pointer;color:var(--ink)}
+.loopbtn{display:inline-flex;align-items:center;gap:5px}
+.loopbtn svg{display:block}
 .legal{border-top:1px solid var(--line);padding-top:14px;font-size:12px;color:var(--muted);line-height:1.6}
 .legal a{color:inherit}
 </style>
@@ -321,6 +323,7 @@ const openRolls = new Set(); let rollsTouched = false;
 let projView = 'scenes';
 let pitchMode = true;   // confirmed on the device: a pad with its own MIDI channel plays the note it receives
 let view = 'projects', sounds = [], soundsQuery = '', soundsFilter = 'all', deviceSerial = null, sndDirNode = 1000, playingSound = null;
+let songLoop = false; try { songLoop = localStorage.getItem('ko2-songloop') === 'on'; } catch {}
 const follow = { running: false, clocks: 0, raf: 0, lastNote: 0, heard: [], followScenes: true, guess: null, unexplained: 0 }; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
 let projDirNode = 2000, DATA = [], soundNames = {}, cur = 0, sel = null, dev = null, player = null, playing = null; // playing: {kind:'pat'|'scene', key}
 
@@ -336,6 +339,7 @@ $('#connect').addEventListener('click', async () => {
     dev = await KO2.connect();
     player = new Player(dev.output);
     player.onNote = vuHit;
+    player.onEnd = () => { playing = null; render(); };
     dev.onRealtime = onDeviceMidi;
     dev.onBusy = showSyncing;
     player.noteFor = (g, pad, pitch) => {
@@ -612,7 +616,7 @@ function songHtml(p){
   const on = isPlaying('song', String(cur));
   const sceneNos = [...new Set([...p.scenes.map(sc => sc[0]), ...p.song])].sort((a, b) => a - b);
   let h = `<div class="ph"><span class="stat"><b>${p.song.length}</b> position${p.song.length === 1 ? '' : 's'}</span><span class="stat"><b>${total}</b> bars</span>
-    <button class="play" data-play="song" aria-pressed="${on}" ${player ? '' : 'disabled'} title="${player ? 'Play the song on the K.O. II' : 'Connect the K.O. II first'}">${on ? '■ stop' : '▶ play song'}</button></div><div class="song">`;
+    <button class="play" data-play="song" aria-pressed="${on}" ${player ? '' : 'disabled'} title="${player ? 'Play the song on the K.O. II' : 'Connect the K.O. II first'}">${on ? '■ stop' : '▶ play song'}</button><button class="play loopbtn" id="songLoop" aria-pressed="${songLoop}" title="${songLoop ? 'Loop is on: the song starts again at position 1' : 'Loop is off: the song stops at the end'}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg> loop</button></div><div class="song">`;
   h += p.song.map((n, i) => `<span class="pos"><span class="k">${i + 1}</span>` + (editable
       ? `<select data-song-scene="${i}" aria-label="Scene at position ${i + 1}">${sceneNos.map(x => `<option value="${x}"${x === n ? ' selected' : ''}>scene ${String(x).padStart(2, '0')}</option>`).join('')}</select>`
         + `<button data-song="left" data-i="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Move position ${i + 1} earlier">◀</button>`
@@ -620,7 +624,7 @@ function songHtml(p){
         + `<button data-song="remove" data-i="${i}" ${p.song.length === 1 ? 'disabled' : ''} aria-label="Remove position ${i + 1}">✕</button>`
       : `scene ${String(n).padStart(2, '0')}`) + `<span class="k">${bars[i]}b</span></span>`).join('');
   if (editable) h += `<button class="play" data-song="add" ${p.song.length >= 99 ? 'disabled' : ''}>+ add position</button>`;
-  return h + `</div><p class="foot">The song as arranged in the K.O. II's song list editor (hold MAIN and press ENTER). Each position runs until the longest pattern of its scene comes round again, so a position can be shorter when that pattern was already part-way (as on the K.O. II); the tool loops the song. Song changes are written together with your other changes.</p>`;
+  return h + `</div><p class="foot">The song as arranged in the K.O. II's song list editor (hold MAIN and press ENTER). Each position runs until the longest pattern of its scene comes round again, so a position can be shorter when that pattern was already part-way (as on the K.O. II). The tool plays the song once, or over and over with loop on. Song changes are written together with your other changes.</p>`;
 }
 function applySong(next, msg){
   const p = DATA[cur];
@@ -1236,6 +1240,7 @@ function showSyncing(kind){
 // The tool gets no audio from the K.O. II, so the meters move on the notes (and their velocity) that
 // the device or the tool plays.
 const vu = { level: { A: 0, B: 0, C: 0, D: 0 }, peak: { A: 0, B: 0, C: 0, D: 0 }, raf: 0, last: 0 };
+document.addEventListener('click', ev => { if (!ev.target.closest || !ev.target.closest('#songLoop')) return; songLoop = !songLoop; try { localStorage.setItem('ko2-songloop', songLoop ? 'on' : 'off'); } catch {} if (player && playing && playing.kind === 'song') player.once = !songLoop; render(); });
 let vuShown = true; try { vuShown = localStorage.getItem('ko2-vu') !== 'off'; } catch {}
 function drawVuShell(){
   let el = $('#vu'), btn = $('#vuOpen');
@@ -1574,7 +1579,7 @@ document.addEventListener('click', ev => {
     else if (pl.dataset.play === 'song') {
       const p = DATA[cur];
       if (isPlaying('song', String(cur))) { stopPlay(); render(); }
-      else { stopPlay(); playing = { kind: 'song', key: String(cur) }; applyMixer(); player.playSegments(p.song.map(n => sceneParts(p, n)), p.bpm); render(); }
+      else { stopPlay(); playing = { kind: 'song', key: String(cur) }; applyMixer(); player.playSegments(p.song.map(n => sceneParts(p, n)), p.bpm, { once: !songLoop }); render(); }
     }
     else playScene(+pl.dataset.scene, true);
     return;

@@ -497,8 +497,10 @@
     // Plays a list of segments one after another and loops the whole list.
     // A segment is a set of patterns played together (a scene). A song (several segments) is timed like the
     // K.O. II does it (see songTiming); a single scene loops every pattern at its own length.
-    playSegments(segments, bpm) {
+    // opts.once: play the list one time and stop (onEnd is called), instead of looping
+    playSegments(segments, bpm, opts = {}) {
       this.stop();
+      this.once = !!opts.once;
       const events = [];
       this.segmentStarts = [];
       let segStart = 0;
@@ -537,7 +539,8 @@
       const LOOKAHEAD = 120;
       const pump = () => {
         const horizon = performance.now() + LOOKAHEAD;
-        if (!events.length) return;
+        if (this.once && performance.now() - this.start >= loopTicks * this.msPerTick) { this.stop(); this.onEnd && this.onEnd(); return; }
+        if (!events.length || (this.once && this.loop > 0)) return;
         for (;;) {
           const e = events[this.idx];
           const at = this.start + (this.loop * loopTicks + e.t) * this.msPerTick;
@@ -547,7 +550,7 @@
             this.output.send([0x80 | (e.ch || 0), e.note, 0], at + e.dur * this.msPerTick);
             if (this.onNote) { const g = e.g, v = e.vel; setTimeout(() => this.onNote(g, v), Math.max(0, at - performance.now())); }
           }
-          if (++this.idx >= events.length) { this.idx = 0; this.loop++; }
+          if (++this.idx >= events.length) { this.idx = 0; this.loop++; if (this.once) break; }
         }
       };
       pump();
