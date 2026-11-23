@@ -1210,9 +1210,25 @@ function sceneScore(scene, heard){
 // when the device has been silent for two bars.
 const songTrack = { pos: 0, startClock: 0, ended: false, lastNoteClock: 0, bar: [] };
 function songLens(p){ return p.song.map(n => Math.max(1, ...sceneParts(p, n).map(q => q.bars || 1))); }
+// The K.O. II plays every run of a song the same way, but its positions can be shorter than their scenes.
+// The tool learns the real length of each position from a run (by listening) and uses it from then on,
+// so the bar can run smoothly on the clock; listening stays on as a correction.
+function learnKey(p){ return `ko2-songlens-${deviceSerial || ''}-${p.p}-${p.song.join('.')}-${songLens(p).join('.')}`; }
+function learnedLens(p){ try { return JSON.parse(localStorage.getItem(learnKey(p)) || 'null') || []; } catch { return []; } }
+function saveLearned(p, arr){ try { localStorage.setItem(learnKey(p), JSON.stringify(arr)); } catch {} }
+function deviceLens(p){ const l = learnedLens(p); return songLens(p).map((n, i) => l[i] || n); }
+function learnPos(p, i, clocks){
+  const bars = Math.round(clocks / 96); if (bars < 1) return;
+  const arr = learnedLens(p); if (arr[i] === bars) return;
+  arr[i] = bars; saveLearned(p, arr);
+}
+function moveTo(p, j, atClock){
+  if (j === songTrack.pos + 1) learnPos(p, songTrack.pos, atClock - songTrack.startClock);
+  songTrack.pos = j; songTrack.startClock = atClock; songTrack.bar = [];
+}
 function songTrackFromSpp(){
   const p = DATA[cur]; if (!p || !p.song.length) return;
-  const lens = songLens(p); let at = 0, pos = 0; const bar = Math.floor(follow.clocks / 96);
+  const lens = deviceLens(p); let at = 0, pos = 0; const bar = Math.floor(follow.clocks / 96);
   for (let i = 0; i < lens.length; i++) { if (bar < at + lens[i]) { pos = i; break; } at += lens[i]; pos = i; }
   Object.assign(songTrack, { pos, startClock: at * 96, ended: false, lastNoteClock: follow.clocks, bar: [] });
 }
@@ -1227,18 +1243,21 @@ function songTrackBar(){
   const heard = songTrack.bar; songTrack.bar = [];
   // End of song: the device sends no stop. In the last position one silent bar is enough, elsewhere two.
   const lastPos = songTrack.pos === p.song.length - 1;
-  if (follow.clocks - songTrack.lastNoteClock > (lastPos ? 1 : 2) * 96) { songTrack.ended = true; updateSongProgress(null); showFollow(); return; }
+  if (follow.clocks - songTrack.lastNoteClock > (lastPos ? 1 : 2) * 96) {
+    if (lastPos) learnPos(p, songTrack.pos, Math.ceil((songTrack.lastNoteClock - songTrack.startClock) / 96) * 96);
+    songTrack.ended = true; updateSongProgress(null); showFollow(); return;
+  }
   const cur0 = p.song[songTrack.pos];
-  // Same scene twice in a row sounds identical: move on by time once the position's length has passed.
-  const lens = songLens(p), elapsed = (follow.clocks - songTrack.startClock) / 96;
-  if (songTrack.pos + 1 < p.song.length && p.song[songTrack.pos + 1] === cur0 && elapsed >= lens[songTrack.pos]) {
-    songTrack.pos++; songTrack.startClock = follow.clocks; return;
+  // Move on by time once the position's (learned) length has passed; notes correct this when needed.
+  const lens = deviceLens(p), elapsed = (follow.clocks - songTrack.startClock) / 96;
+  if (songTrack.pos + 1 < p.song.length && elapsed >= lens[songTrack.pos] && (p.song[songTrack.pos + 1] === cur0 || learnedLens(p)[songTrack.pos])) {
+    songTrack.pos++; songTrack.startClock = follow.clocks; songTrack.bar = []; return;
   }
   if (heard.length < 2) return;
   const fits = n => heard.filter(x => scenePitches(p, n).has(x)).length / heard.length;
   if (fits(cur0) >= 0.9) return;                                   // still the current position's scene
   for (let j = songTrack.pos + 1; j < Math.min(p.song.length, songTrack.pos + 4); j++) {
-    if (p.song[j] !== cur0 && fits(p.song[j]) >= 0.9) { songTrack.pos = j; songTrack.startClock = Math.floor(follow.clocks / 96) * 96 - 96; return; }
+    if (p.song[j] !== cur0 && fits(p.song[j]) >= 0.9) { moveTo(p, j, Math.floor(follow.clocks / 96) * 96 - 96); return; }
   }
 }
 // React on the first note that cannot come from the current position's scene but does belong to a coming one.
@@ -1248,16 +1267,16 @@ function songTrackNote(pitch){
   if (scenePitches(p, cur0).has(pitch)) return;
   for (let j = songTrack.pos + 1; j < Math.min(p.song.length, songTrack.pos + 4); j++) {
     if (p.song[j] !== cur0 && scenePitches(p, p.song[j]).has(pitch)) {
-      songTrack.pos = j; songTrack.startClock = Math.floor(follow.clocks / 96) * 96; songTrack.bar = [];
+      moveTo(p, j, Math.floor(follow.clocks / 96) * 96);
       return;
     }
   }
 }
 function songTrackTicks(){
-  const p = DATA[cur]; const lens = songLens(p);
-  const start = lens.slice(0, songTrack.pos).reduce((a, b) => a + b, 0) * TPB;
-  const len = lens[songTrack.pos] * TPB;
-  return start + Math.min(len - 1, Math.max(0, (follow.clocks - songTrack.startClock) * 4));
+  const p = DATA[cur]; const nominal = songLens(p), real = deviceLens(p);
+  const start = nominal.slice(0, songTrack.pos).reduce((a, b) => a + b, 0) * TPB;
+  const frac = Math.min(0.999, Math.max(0, (follow.clocks - songTrack.startClock) / 96 / real[songTrack.pos]));
+  return start + frac * nominal[songTrack.pos] * TPB;   // smooth position inside the timeline block
 }
 function heardNote(pitch){
   const t = follow.clocks * 4;
