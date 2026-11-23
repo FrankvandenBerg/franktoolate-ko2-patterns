@@ -18,7 +18,7 @@ return [
     'mail_from_name' => 'K.O. II Patterns',
 
     // Where users can get the source code (AGPL)
-    'source_url' => 'https://github.com/franktoolate/ko2-patterns',
+    'source_url' => 'https://github.com/FrankvandenBerg/franktoolate-ko2-patterns',
 
     // Needed once, to create the first admin account at /setup. Use a long random string.
     'setup_token' => 'change-me-to-a-long-random-string',
