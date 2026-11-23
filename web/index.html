@@ -185,7 +185,30 @@ a.play{text-decoration:none;display:inline-block}
 .um-pop form{margin:0}
 .um-mail{font:11px var(--mono);color:var(--muted);padding:6px 10px}
 .linkbtn{font-size:12px;color:var(--muted);text-decoration:underline;cursor:pointer;margin-left:auto}
-@media (max-width:720px){.appbar-in{gap:10px}.mainnav{order:3;flex-basis:100%}.conn{margin-left:auto}}
+.navbtn{display:none}
+@media (max-width:720px){
+  .appbar-in{gap:10px;padding:8px 16px}
+  .navbtn{display:flex;flex-direction:column;justify-content:center;gap:4px;order:3;width:40px;height:40px;border:1px solid var(--line);border-radius:10px;background:var(--bg);cursor:pointer;padding:0 10px}
+  .navbtn span{display:block;height:2px;border-radius:2px;background:var(--ink);transition:transform .15s,opacity .15s}
+  .appbar.nav-open .navbtn span:nth-child(1){transform:translateY(6px) rotate(45deg)}
+  .appbar.nav-open .navbtn span:nth-child(2){opacity:0}
+  .appbar.nav-open .navbtn span:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
+  .conn{order:2;margin-left:auto}
+  .conn #connect,.mainnav,.helpbtn,.usermenu{display:none}
+  .appbar.nav-open{z-index:58}
+  .appbar.nav-open .appbar-in{padding-bottom:14px}
+  .appbar.nav-open .navbtn{margin-left:auto}
+  .appbar.nav-open .mainnav{display:flex;order:4;flex-basis:100%;flex-direction:column;gap:2px;border-top:1px solid var(--line);padding-top:10px}
+  .appbar.nav-open .mainnav button,.appbar.nav-open .mainnav a{text-align:left;padding:12px 14px;font-size:16px}
+  .appbar.nav-open .conn{flex-basis:100%;order:5;margin:0}
+  .appbar.nav-open .conn #connect{display:block;flex:1;padding:12px}
+  .appbar.nav-open .helpbtn{display:block;order:6;flex-basis:100%;width:auto;height:auto;border-radius:8px;padding:12px 14px;text-align:left;font:600 16px var(--display)}
+  .appbar.nav-open .helpbtn::after{content:"  How to…"}
+  .appbar.nav-open .usermenu{display:block;order:7;flex-basis:100%;border-top:1px solid var(--line);padding-top:8px}
+  .appbar.nav-open .um summary{display:none}
+  .appbar.nav-open .um-pop{position:static;box-shadow:none;border:0;padding:0;min-width:0}
+  .appbar.nav-open .um-pop a,.appbar.nav-open .um-pop button{font-size:15px;padding:12px 14px}
+}
 .sect{border-radius:14px;padding:14px 16px 16px;display:flex;flex-direction:column;gap:12px;border:1px solid var(--line)}
 .sect-song{background:color-mix(in srgb,var(--b) 7%,var(--panel));border-color:color-mix(in srgb,var(--b) 35%,var(--line))}
 .sect-scenes{background:color-mix(in srgb,var(--orange) 5%,var(--panel));border-color:color-mix(in srgb,var(--orange) 30%,var(--line))}
@@ -338,6 +361,7 @@ body.ko-busy :is([data-play],[data-snd],.tile-hit):not([aria-pressed="true"]){op
 <header class="appbar">
   <div class="appbar-in">
     <a class="brand" href="./">K.O. II <span>patterns</span></a>
+    <button class="navbtn" id="navBtn" aria-label="Menu" aria-expanded="false" aria-controls="viewTabs"><span></span><span></span><span></span></button>
     <nav class="mainnav" id="viewTabs" aria-label="Main">
       <button data-view="projects" aria-pressed="true">Projects</button>
       <button data-view="sounds">Sounds</button>
@@ -1595,6 +1619,18 @@ function groupForNote(pitch, ch){
   return best;
 }
 drawVuShell();
+// Mobile: the bar folds into a menu (☰)
+function setNav(open){
+  const bar = document.querySelector('.appbar'); bar.classList.toggle('nav-open', open);
+  $('#navBtn').setAttribute('aria-expanded', open);
+  const um = document.querySelector('.usermenu details'); if (um && matchMedia('(max-width:720px)').matches) um.open = open;
+}
+document.addEventListener('click', ev => {
+  if (!ev.target.closest) return;
+  if (ev.target.closest('#navBtn')) { setNav(!document.querySelector('.appbar').classList.contains('nav-open')); return; }
+  if (document.querySelector('.appbar.nav-open') && ev.target.closest('.mainnav [data-view], .mainnav a, #helpOpen, #connect')) setNav(false);
+});
+matchMedia('(max-width:720px)').addEventListener('change', e => { if (!e.matches) { setNav(false); const um = document.querySelector('.usermenu details'); if (um) um.open = false; } });
 // ---- How-to: a searchable help panel (? button in the bar, or press ?) ----
 const HOWTO = [
   ['Start', 'Connect the K.O. II', `<p>Use Chrome on a computer. Connect the K.O. II with a USB cable, click <b>Connect K.O. II</b> and allow MIDI. The tool then reads all projects and the sound library.</p><p>Without a K.O. II you can still look at backup files: open a <kbd>.tar</kbd> with <b>Open backup</b>.</p>`],
