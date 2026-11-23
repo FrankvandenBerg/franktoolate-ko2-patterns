@@ -307,7 +307,7 @@ const openRolls = new Set(); let rollsTouched = false;
 let projView = 'scenes';
 let pitchMode = true;   // confirmed on the device: a pad with its own MIDI channel plays the note it receives
 let view = 'projects', sounds = [], soundsQuery = '', soundsFilter = 'all', deviceSerial = null, sndDirNode = 1000, playingSound = null;
-const follow = { running: false, clocks: 0, raf: 0, lastNote: 0, heard: [], followScenes: true, guess: null }; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
+const follow = { running: false, clocks: 0, raf: 0, lastNote: 0, heard: [], followScenes: true, guess: null, unexplained: 0 }; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
 let projDirNode = 2000, DATA = [], soundNames = {}, cur = 0, sel = null, dev = null, player = null, playing = null; // playing: {kind:'pat'|'scene', key}
 
 function status(t, err){ const s=$('#status'); s.textContent=t; s.classList.toggle('err', !!err); }
@@ -1216,9 +1216,13 @@ function showSyncing(kind){
 function onDeviceMidi(d){
   const st = d[0];
   if ((st === 0xFA || st === 0xFB) && dev) dev.abortGet = true;   // stop any background read right away
-  if (st === 0xFA) { follow.running = true; follow.clocks = 0; follow.heard = []; songTrackFromSpp(); showFollow(); }
-  else if (st === 0xFB) { follow.running = true; follow.heard = []; showFollow(); }
-  else if (st === 0xFC) { follow.running = false; showFollow(); clearTimeout(sync.timer); sync.timer = setTimeout(() => syncActive('after stop'), 1500); }
+  if (st === 0xFA) { follow.running = true; follow.clocks = 0; follow.heard = []; follow.unexplained = 0; songTrackFromSpp(); showFollow(); }
+  else if (st === 0xFB) { follow.running = true; follow.heard = []; follow.unexplained = 0; showFollow(); }
+  else if (st === 0xFC) {
+    follow.running = false; showFollow(); clearTimeout(sync.timer);
+    // only read the project again when the K.O. II played notes the tool does not know (a recording)
+    if (follow.unexplained) sync.timer = setTimeout(() => syncActive('after recording'), 1500);
+  }
   else if (st === 0xF2) { follow.clocks = ((d[2] << 7) | d[1]) * 6; songTrackFromSpp(); }
   else if (st === 0xF8) { if (follow.running) { follow.clocks++; if (follow.clocks % 96 === 0) songTrackBar(); scheduleFollowFrame(); } }
   else if ((st & 0xF0) === 0x90 && d[2] > 0) { follow.lastNote = performance.now(); if (follow.running) heardNote(d[1]); }
@@ -1329,7 +1333,26 @@ function songTrackTicks(){
   const start = lens.slice(0, songTrack.pos).reduce((a, b) => a + b, 0) * TPB;
   return start + Math.min(0.999, Math.max(0, (follow.clocks - songTrack.startClock) / 96 / lens[songTrack.pos])) * lens[songTrack.pos] * TPB;
 }
+// Is a note the K.O. II plays already in the tool's copy of the project? If not, something was recorded
+// (or played live) and the project is read again after stop. Reading while you press play can make the
+// K.O. II stay silent, so the tool only reads when it is needed.
+function noteExplained(pitch){
+  const p = DATA[cur]; if (!p) return true;
+  const t = follow.clocks * 4;
+  const songPh = p.song.length > 1 && !songTrack.ended ? songPhases(p)[songTrack.pos] : null;
+  for (const x of p.pats) {
+    const len = Math.max(1, x.bars) * TPB;
+    const ts = [t % len];
+    if (songPh) ts.push((songPh[x.g] * TPB + Math.max(0, follow.clocks - songTrack.startClock) * 4) % len);
+    for (const e of x.ev) {
+      if (e[4] !== pitch) continue;
+      for (const tt of ts) { const d = ((tt - e[1]) % len + len) % len; if (d <= 12 || len - d <= 12) return true; }
+    }
+  }
+  return false;
+}
 function heardNote(pitch){
+  if (!noteExplained(pitch)) follow.unexplained++;
   const t = follow.clocks * 4;
   songTrack.lastNoteClock = follow.clocks; songTrack.bar.push(pitch); songTrackNote(pitch);
   follow.heard.push({ pitch, t });
