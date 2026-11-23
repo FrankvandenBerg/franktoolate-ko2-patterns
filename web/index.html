@@ -202,7 +202,8 @@ a.play{text-decoration:none;display:inline-block}
 .songview{display:flex;flex-direction:column;gap:12px}
 .timeline{position:relative;height:56px;border:1px solid var(--line);border-radius:10px;background:var(--bg);overflow:hidden}
 .tl-pos{position:absolute;top:6px;bottom:6px;margin:0 2px;border-radius:7px;border:1px solid hsl(var(--h) 55% 45%);background:hsl(var(--h) 60% 55% / .28);color:var(--ink);font:inherit;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:0 8px;overflow:hidden;min-width:0}
-.tl-pos b{font-family:var(--mono);font-size:14px}
+.tl-pos b{font-family:var(--mono);font-size:13px;white-space:nowrap}
+.tl-pos small{white-space:nowrap}
 .tl-pos small{font-family:var(--mono);font-size:10px;color:var(--muted)}
 .tl-pos.now{background:hsl(var(--h) 60% 55% / .7);box-shadow:0 0 0 2px var(--ink)}
 .tl-head{position:absolute;top:0;bottom:0;width:3px;background:var(--ink);left:calc(var(--tp,0) * 100%);pointer-events:none;z-index:2;box-shadow:0 0 0 1px var(--panel)}
@@ -565,7 +566,7 @@ function songTimeline(p){
   const hue = n => (n * 47) % 360;
   let h = `<div class="timeline" id="timeline" data-total="${total}">`, at = 0;
   p.song.forEach((n, i) => {
-    h += `<button class="tl-pos" data-goto-scene="${n}" style="left:${at / total * 100}%;width:calc(${bars[i] / total * 100}% - 4px);--h:${hue(n)}" title="Position ${i + 1}: scene ${String(n).padStart(2, '0')}, ${bars[i]} bar${bars[i] === 1 ? '' : 's'} · click to open the scene"><b>${String(n).padStart(2, '0')}</b><small>${i + 1}</small></button>`;
+    h += `<button class="tl-pos" data-goto-scene="${n}" style="left:${at / total * 100}%;width:calc(${bars[i] / total * 100}% - 4px);--h:${hue(n)}" title="Position ${i + 1}: scene ${String(n).padStart(2, '0')}, ${bars[i]} bar${bars[i] === 1 ? '' : 's'} · click to open the scene"><b>${bars[i] / total >= 0.1 ? 'Scene ' + n : 'S' + n}</b><small>${bars[i] / total >= 0.18 ? 'pos ' + (i + 1) + ' · ' + bars[i] + ' bar' + (bars[i] === 1 ? '' : 's') : i + 1}</small></button>`;
     at += bars[i];
   });
   h += `<div class="tl-head" hidden></div></div><div class="tl-axis"><span class="tl-now" id="tlNow">bar 1</span><span>${total} bars · ${p.bpm ? Math.round(total * 4 * 60 / p.bpm) + ' s at ' + p.bpm + ' BPM' : ''}</span></div>`;
