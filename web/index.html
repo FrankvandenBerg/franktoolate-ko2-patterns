@@ -334,6 +334,7 @@ $('#connect').addEventListener('click', async () => {
     sndDirNode = sndDir ? sndDir.node : 1000;
     await loadSounds(sndDir);
     startSync();
+    { const ai = DATA.findIndex(p => p.node && p.node === deviceActiveNode); if (ai >= 0) autoChannels(ai); }
     render();
     progress(null);
     const n = DATA.reduce((a, p) => a + p.pats.filter(x => x.notes).length, 0);
@@ -898,6 +899,7 @@ function onDeviceFileEvent(e){
     const left = DATA[cur].changes.length ? ` Your unwritten changes in project ${DATA[cur].p} are kept; switch back on the K.O. II to write them.` : '';
     stopPlay(); cur = i; sel = null; selScene = null; focusSel = null; editGroup = null; noteSel = -1;
     status(`The K.O. II switched to project ${DATA[i].p}; the tool follows.` + left);
+    setTimeout(() => autoChannels(i), 300);
   }
   render();
 }
@@ -978,8 +980,15 @@ function askAssignChannels(){
     <p class="stat">The K.O. II keeps receiving on all channels, so nothing else changes. A backup of the project is stored first.</p>
     <div class="row"><button class="btn small" id="doAssignCh">Set channels on the K.O. II</button><button class="btn small sec" data-modal-close>Cancel</button></div>`);
 }
-async function assignChannels(){
-  const p = DATA[cur], plan = channelPlan(p);
+// A melody recorded on a pad without its own MIDI channel gets a free channel (2–16) automatically.
+async function autoChannels(i){
+  const p = DATA[i];
+  if (!dev || !p || !p.node || p.changes.length || follow.running || playing) return;
+  if (channelPlan(p).assign.length) await assignChannels(i, true);
+}
+async function assignChannels(i = cur, auto = false){
+  const p = DATA[i], plan = channelPlan(p);
+  if (!plan.assign.length || !dev || !p.node) return;
   closeModal();
   try {
     status(`Backing up project ${p.p}…`);
@@ -997,9 +1006,10 @@ async function assignChannels(){
     }
     await dev.fsInit();
     const tar = await dev.get(p.node);
-    DATA[cur] = makeProject(p.p, tar, p.node);
-    status(`Set ${plan.assign.length} MIDI channel${plan.assign.length === 1 ? '' : 's'} in project ${p.p}. Melody pads now play at their pitch from the tool.`);
-    render();
+    DATA[i] = makeProject(p.p, tar, p.node);
+    const padLabel = k => `${k[0].toUpperCase()} pad ${KO2Lib.PAD_LABELS[+k.slice(1) - 1]}`;
+    status(`${auto ? 'New melody found: ' : ''}gave ${plan.assign.map(a => padLabel(a.k) + ' channel ' + a.ch).join(', ')} in project ${p.p}, so the tool plays its pitches.`);
+    if (i === cur) render();
   } catch (e) { status('Could not set the channels: ' + (e.message || e), true); }
 }
 async function openBackups(){
@@ -1087,6 +1097,7 @@ async function syncActive(reason){
     if (p.changes.length) { status(`Project ${p.p} changed on the K.O. II. Your unwritten changes are kept; undo them to load the device version.`); return; }
     const keep = { selScene, sel, openRolls: [...openRolls] };
     DATA[i] = makeProject(p.p, now, p.node);
+    setTimeout(() => autoChannels(i), 300);
     if (DATA[i].scenes.some(sc => sc[0] === keep.selScene)) selScene = keep.selScene;
     status(`Updated project ${p.p} from the K.O. II${reason ? ' (' + reason + ')' : ''}.`);
     if (i === cur) render();
@@ -1222,7 +1233,7 @@ document.addEventListener('click', ev => {
   if (ev.target.closest('#ppToggle')) { pendingOpen = !pendingOpen; drawPending(DATA[cur]); return; }
   if (ev.target.closest('#openBackups')) { openBackups(); return; }
   if (ev.target.closest('#assignCh')) { askAssignChannels(); return; }
-  if (ev.target.closest('#doAssignCh')) { assignChannels(); return; }
+  if (ev.target.closest('#doAssignCh')) { assignChannels(cur); return; }
   if (ev.target.closest('[data-modal-close]') || ev.target.id === 'modal') { closeModal(); return; }
   const rb = ev.target.closest('[data-restore]'); if (rb) { restoreBackup(+rb.dataset.restore, rb.dataset.when); return; }
   const vb = ev.target.closest('[data-view]'); if (vb) { stopPlay(); view = vb.dataset.view; $('#viewTabs').querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view)); if (DATA.length) render(); else if (view === 'sounds') renderSounds(); else { $('#project').hidden = true; } return; }
