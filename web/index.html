@@ -1208,7 +1208,7 @@ function sceneScore(scene, heard){
 // own phase), and it sends no stop at the end of a song. So: start from the song position pointer, then
 // move on when the notes heard in the last bar clearly belong to the scene of a later position, and stop
 // when the device has been silent for two bars.
-const songTrack = { pos: 0, startClock: 0, ended: false, lastNoteClock: 0, bar: [] };
+const songTrack = { pos: 0, startClock: 0, ended: false, endClock: 0, lastNoteClock: 0, bar: [] };
 function songLens(p){ return p.song.map(n => Math.max(1, ...sceneParts(p, n).map(q => q.bars || 1))); }
 // The K.O. II plays every run of a song the same way, but its positions can be shorter than their scenes.
 // The tool learns the real length of each position from a run (by listening) and uses it from then on,
@@ -1245,13 +1245,13 @@ function songTrackBar(){
   const lastPos = songTrack.pos === p.song.length - 1;
   if (follow.clocks - songTrack.lastNoteClock > (lastPos ? 1 : 2) * 96) {
     if (lastPos) learnPos(p, songTrack.pos, Math.ceil((songTrack.lastNoteClock - songTrack.startClock) / 96) * 96);
-    songTrack.ended = true; updateSongProgress(null); showFollow(); scheduleFollowFrame(); return;
+    songTrack.ended = true; songTrack.endClock = follow.clocks; updateSongProgress(null); showFollow(); scheduleFollowFrame(); return;
   }
   const cur0 = p.song[songTrack.pos];
   // Known end: once the last position has played its learned length, the song is over.
   const learnedLast = learnedLens(p)[p.song.length - 1];
   if (lastPos && learnedLast && (follow.clocks - songTrack.startClock) / 96 >= learnedLast) {
-    songTrack.ended = true; updateSongProgress(null); showFollow(); scheduleFollowFrame(); return;
+    songTrack.ended = true; songTrack.endClock = follow.clocks; updateSongProgress(null); showFollow(); scheduleFollowFrame(); return;
   }
   // Move on by time once the position's (learned) length has passed; notes correct this when needed.
   const lens = deviceLens(p), elapsed = (follow.clocks - songTrack.startClock) / 96;
@@ -1325,7 +1325,8 @@ function showFollow(){
 function drawFollow(){
   if (!follow.running || playing) return;
   const p = DATA[cur]; if (!p) return;
-  if (p.song.length > 1 && songTrack.ended) {                       // song is over: everything stands still
+  // song is over and the device has played nothing since: everything stands still (notes after it resume)
+  if (p.song.length > 1 && songTrack.ended && songTrack.lastNoteClock <= songTrack.endClock) {
     updateCycle(null);
     document.querySelectorAll('.note.hit').forEach(n => n.classList.remove('hit'));
     document.querySelectorAll('.playhead').forEach(ph => ph.hidden = true);
