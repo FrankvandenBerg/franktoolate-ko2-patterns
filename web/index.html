@@ -1296,6 +1296,7 @@ function heardNote(pitch){
   follow.heard = follow.heard.filter(h => t - h.t <= 4 * TPB).slice(-200);
   if (!follow.followScenes || follow.heard.length < 5) return;
   const p = DATA[cur]; if (!p) return;
+  if (p.song.length > 1 && !songTrack.ended) return;                // the song tracker picks the scene; two voices would fight (blinking)
   const scored = sceneIndex(p).map(sc => ({ n: sc.n, score: sceneScore(sc, follow.heard) }));
   scored.sort((a, b) => b.score - a.score);
   const best = scored[0]; if (!best || best.score < 0.8) return;
