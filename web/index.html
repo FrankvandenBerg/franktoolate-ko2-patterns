@@ -259,6 +259,9 @@ details.lib[open]{display:flex;flex-direction:column;gap:12px}
 .pos button{font:inherit;font-size:11px;line-height:1;cursor:pointer;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--ink);padding:3px 5px}
 .pos button:disabled{opacity:.35;cursor:default}
 .foot{font-size:12px;color:var(--muted);line-height:1.55;max-width:75ch;margin:0}
+/* while the K.O. II itself plays, the tool only watches: controls are faded and can't be used */
+body.ko-playing .wrap :is(button:not(.tl-pos),select,input,label),body.ko-playing #pendingPop :is(button,input,label){opacity:.4;pointer-events:none}
+body.ko-playing .wrap :is(.lane,.note,.tl-pos){pointer-events:none}
 .legal{border-top:1px solid var(--line);padding-top:14px;font-size:12px;color:var(--muted);line-height:1.6}
 .legal a{color:inherit}
 </style>
@@ -741,7 +744,7 @@ document.addEventListener('click', ev => {
   pianoOpen.set(b.dataset.piano, b.getAttribute('aria-pressed') !== 'true'); drawRolls();
 });
 document.addEventListener('pointerdown', ev => {
-  if (!editGroup) return;
+  if (!editGroup || follow.running) return;
   const lane = ev.target.closest('.rollgrid.editing .lane');
   if (!lane) return;
   const x = editPattern(); if (!x) return;
@@ -1394,6 +1397,7 @@ function heardNote(pitch){
 }
 function scheduleFollowFrame(){ if (!follow.raf) follow.raf = requestAnimationFrame(() => { follow.raf = 0; drawFollow(); }); }
 function showFollow(){
+  document.body.classList.toggle('ko-playing', follow.running);
   document.querySelectorAll('.followBadge').forEach(b => b.hidden = !follow.running);
   if (!follow.running) {
     if (!playing) { updateCycle(null); updateSongProgress(null); }
@@ -1589,6 +1593,7 @@ document.addEventListener('drop', ev => {
 });
 document.addEventListener('keydown', ev => {
   if (!DATA.length || ev.target.closest('input,select')) return;
+  if (follow.running) return;                                       // the K.O. II is playing: the tool only watches
   if ((ev.key === 'ArrowUp' || ev.key === 'ArrowDown') && editGroup && noteSel >= 0) {
     const x = editPattern(); const ev2 = x.ev.map(e => [...e]), e = ev2[noteSel];
     if (e) { ev.preventDefault(); e[4] = Math.max(0, Math.min(127, e[4] + (ev.key === 'ArrowUp' ? 1 : -1) * (ev.shiftKey ? 12 : 1))); commitNotes(x, ev2); }
