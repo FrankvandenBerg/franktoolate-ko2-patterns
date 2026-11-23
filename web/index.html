@@ -568,6 +568,12 @@ function updateSongProgress(t, source){
   for (let i = 0; i < bars.length; i++) { if (tt < (at + bars[i]) * TPB) { pos = i; break; } at += bars[i]; }
   if (label) label.textContent = `▶ ${source} · bar ${Math.floor(tt / TPB) + 1} of ${totalBars} · position ${pos + 1} (scene ${String(p.song[pos]).padStart(2, '0')})`;
   document.querySelectorAll('.tl-pos').forEach((el, i) => el.classList.toggle('now', i === pos));
+  // the Scenes section follows the song: open the scene that is playing now (not while editing notes)
+  const sceneNow = p.song[pos];
+  if (sceneNow && sceneNow !== selScene && !editGroup && !drag && p.scenes.some(sc => sc[0] === sceneNow)) {
+    selScene = sceneNow; sel = null; noteSel = -1;
+    render();
+  }
 }
 function songHtml(p){
   const editable = !!p.songEditable;
