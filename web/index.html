@@ -1277,7 +1277,8 @@ function songTrackFromSpp(){
   const p = DATA[cur]; if (!p || !p.song.length) return;
   const lens = deviceLens(p); let at = 0, pos = 0; const bar = Math.floor(follow.clocks / 96);
   for (let i = 0; i < lens.length; i++) { if (bar < at + lens[i]) { pos = i; break; } at += lens[i]; pos = i; }
-  Object.assign(songTrack, { pos, startClock: at * 96, ended: false, lastNoteClock: follow.clocks, bar: [] });
+  Object.assign(songTrack, { pos, startClock: at * 96, ended: false, off: false, lastNoteClock: follow.clocks, bar: [] });
+  follow.disagree = 0;
 }
 const scenePitchCache = new WeakMap();
 function scenePitches(p, n){
@@ -1315,6 +1316,7 @@ function songTrackBar(){
 function songTrackNote(pitch){
   const p = DATA[cur]; if (!p || p.song.length < 2) return;
   if (songTrack.ended) {
+    if (songTrack.off) return;                                       // playing scenes, not the song
     // the song loops (setting 421): notes of the first position start a new round
     if (scenePitches(p, p.song[0]).has(pitch)) Object.assign(songTrack, { pos: 0, startClock: Math.floor(follow.clocks / 96) * 96, ended: false, bar: [] });
     return;
@@ -1360,15 +1362,24 @@ function heardNote(pitch){
   follow.heard = follow.heard.filter(h => t - h.t <= 4 * TPB).slice(-200);
   if (!follow.followScenes || follow.heard.length < 5) return;
   const p = DATA[cur]; if (!p) return;
-  if (p.song.length > 1 && !songTrack.ended) return;                // the song tracker picks the scene; two voices would fight (blinking)
   const scored = sceneIndex(p).map(sc => ({ n: sc.n, score: sceneScore(sc, follow.heard) }));
   scored.sort((a, b) => b.score - a.score);
   const best = scored[0]; if (!best || best.score < 0.8) return;
   const tied = scored.filter(x => best.score - x.score < 0.02).map(x => x.n);
-  if (tied.includes(selScene)) { follow.guess = selScene; return; }   // current choice still fits: keep it
   // Scenes with the same audible patterns sound identical: treat them as one and take the lowest number.
   // (compare what they play, not their pattern numbers: copies of a pattern sound the same)
   const sig = n => sceneParts(p, n).filter(q => q.notes).map(q => q.g + ':' + q.bars + ':' + q.ev.map(e => e[1] + '/' + e[4]).sort().join(',')).sort().join('|');
+  if (p.song.length > 1 && !songTrack.ended) {
+    // While the song tracker runs it picks the scene (two voices would fight and make the screen blink).
+    // But when the notes clearly belong to another scene for a while, the K.O. II is not playing the song
+    // (you play and switch scenes yourself): then the tool stops tracking the song until the next start.
+    const songScene = p.song[songTrack.pos];
+    if (tied.includes(songScene) || sig(songScene) === sig(best.n)) { follow.disagree = 0; return; }
+    if (++follow.disagree < 6) return;
+    Object.assign(songTrack, { ended: true, off: true, endClock: follow.clocks });
+    updateSongProgress(null);
+  }
+  if (tied.includes(selScene)) { follow.guess = selScene; return; }   // current choice still fits: keep it
   if (new Set(tied.map(sig)).size > 1) return;                      // not sure yet
   best.n = Math.min(...tied);
   follow.guess = best.n;
