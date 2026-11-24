@@ -1899,7 +1899,9 @@ function drawFollow(){
     return;
   }
   updateCycle(follow.clocks * 4);
-  if (p.song.length > 1) updateSongProgress(songTrackTicks(), 'K.O. II');
+  // only while the song tracker runs: after it stopped (you play scenes yourself) the scene recognition
+  // chooses the scene, and moving the song bar would switch the scene back each frame (the screen shook)
+  if (p.song.length > 1 && !songTrack.ended) updateSongProgress(songTrackTicks(), 'K.O. II');
   document.querySelectorAll('.roll[data-g]').forEach(el => {
     const x = patFor(p, el.dataset.g), g = el.querySelector('.rollgrid'), ph = el.querySelector('.playhead');
     if (!x || !g || !ph) return;
