@@ -726,8 +726,8 @@ function flipSongClock(){
     drawSongClock(); void c.offsetWidth; c.classList.remove('in-' + dir);
   }, 160);
 }
-// m:ss.t (tenths); time left rounds up so it reaches 0:00.0 exactly at the end
-function mmsst(sec, up){ let d = up ? Math.ceil(sec * 10 - 1e-6) : Math.floor(sec * 10 + 1e-6); d = Math.max(0, d); const s = Math.floor(d / 10); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0') + '.' + (d % 10); }
+// mm:ss.hh (hundredths); time left rounds up so it reaches 0:00.0 exactly at the end
+function mmsst(sec, up){ let d = up ? Math.ceil(sec * 100 - 1e-6) : Math.floor(sec * 100 + 1e-6); d = Math.max(0, d); const s = Math.floor(d / 100); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0') + '.' + String(d % 100).padStart(2, '0'); }
 function mmss(sec){ sec = Math.round(sec); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); }
 function songHtml(p){
   const editable = !!p.songEditable;
