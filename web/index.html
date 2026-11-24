@@ -87,7 +87,7 @@ td.dim{color:var(--muted)}
 .edit{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;min-height:58px;align-content:center}
 .edhint{flex:1 1 300px}
 .songclock{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;display:inline-block;overflow:hidden;vertical-align:bottom;perspective:200px}
-.songclock .sc{display:inline-block;transition:transform .16s ease-in,opacity .16s ease-in}
+.songclock .sc{pointer-events:none;display:inline-block;transition:transform .16s ease-in,opacity .16s ease-in}
 .songclock.out-up .sc{transform:translateY(-110%) rotateX(70deg);opacity:0}
 .songclock.out-down .sc{transform:translateY(110%) rotateX(-70deg);opacity:0}
 .songclock.in-up .sc{transform:translateY(110%) rotateX(-70deg);opacity:0;transition:none}
@@ -712,7 +712,9 @@ function songClockText(t, totalSec){
 function drawSongClock(){
   const c = document.getElementById('songClock'); if (!c || c.dataset.anim) return;
   c.classList.toggle('down', songClockDown);
-  c.innerHTML = `<span class="sc">${songClockText(songClockT, +c.dataset.sec)}${songClockT == null ? '' : '<i>▲</i>'}</span>`;
+  // only touch the DOM when the text changes (rewriting it every frame swallowed clicks)
+  const html = `<span class="sc">${songClockText(songClockT, +c.dataset.sec)}${songClockT == null ? '' : '<i>▲</i>'}</span>`;
+  if (c._html !== html) { c._html = html; c.innerHTML = html; }
 }
 // Switch between time played and time left with a small flip: the old value rolls out, the new one rolls in.
 function flipSongClock(){
