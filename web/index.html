@@ -1705,8 +1705,8 @@ function onDeviceMidi(d){
   const st = d[0];
   if ((st === 0xFA || st === 0xFB) && dev) dev.abortGet = true;   // stop any background read right away
   if ((st === 0xFA || st === 0xFB) && playing) { stopPlay(); render(); }   // the K.O. II takes over: stop the tool's own playback
-  if (st === 0xFA) { follow.running = true; follow.clocks = 0; follow.heard = []; follow.unexplained = 0; songTrackFromSpp(); showFollow(); }
-  else if (st === 0xFB) { follow.running = true; follow.heard = []; follow.unexplained = 0; showFollow(); }
+  if (st === 0xFA) { follow.running = true; follow.clocks = 0; follow.heard = []; follow.unexplained = 0; follow.nofit = 0; songTrackFromSpp(); showFollow(); }
+  else if (st === 0xFB) { follow.running = true; follow.heard = []; follow.unexplained = 0; follow.nofit = 0; showFollow(); }
   else if (st === 0xFC) {
     follow.running = false; showFollow(); clearTimeout(sync.timer);
     // only read the project again when the K.O. II played notes the tool does not know (a recording)
@@ -1853,7 +1853,10 @@ function heardNote(pitch){
   const p = DATA[cur]; if (!p) return;
   const scored = sceneIndex(p).map(sc => ({ n: sc.n, score: sceneScore(sc, follow.heard) }));
   scored.sort((a, b) => b.score - a.score);
-  const best = scored[0]; if (!best || best.score < 0.8) return;
+  const best = scored[0];
+  // no scene of the tool's copy fits what the K.O. II plays for a while: its copy is out of date, read it after stop
+  if (!best || best.score < 0.5) { if (++follow.nofit >= 8) follow.unexplained++; } else follow.nofit = 0;
+  if (!best || best.score < 0.8) return;
   const tied = scored.filter(x => best.score - x.score < 0.02).map(x => x.n);
   // Scenes with the same audible patterns sound identical: treat them as one and take the lowest number.
   // (compare what they play, not their pattern numbers: copies of a pattern sound the same)
@@ -1866,6 +1869,7 @@ function heardNote(pitch){
     if (tied.includes(songScene) || sig(songScene) === sig(best.n)) { follow.disagree = 0; return; }
     if (++follow.disagree < 6) return;
     Object.assign(songTrack, { ended: true, off: true, endClock: follow.clocks });
+    follow.unexplained++;   // or the device's song/scenes changed (patterns moved on the K.O. II): read the project after stop
     updateSongProgress(null);
   }
   if (tied.includes(selScene)) { follow.guess = selScene; return; }   // current choice still fits: keep it
