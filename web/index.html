@@ -86,7 +86,7 @@ td.dim{color:var(--muted)}
 .pat.drop,.grow.drop{outline:2px dashed var(--orange);outline-offset:2px}
 .edit{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;min-height:58px;align-content:center}
 .edhint{flex:1 1 300px}
-.songclock{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;display:inline-block;overflow:hidden;vertical-align:bottom;perspective:200px}
+.songclock{font-variant-numeric:tabular-nums;background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;display:inline-block;overflow:hidden;vertical-align:bottom;perspective:200px}
 .songclock .sc{pointer-events:none;display:inline-block;transition:transform .16s ease-in,opacity .16s ease-in}
 .songclock.out-up .sc{transform:translateY(-110%) rotateX(70deg);opacity:0}
 .songclock.out-down .sc{transform:translateY(110%) rotateX(-70deg);opacity:0}
@@ -705,9 +705,9 @@ function updateSongProgress(t, source){
   }
 }
 function songClockText(t, totalSec){
-  if (t == null) return `<b>${mmss(totalSec)}</b> total`;
+  if (t == null) return `<b>${mmsst(totalSec)}</b> total`;
   const p = DATA[cur], el = t / TPB * 4 * 60 / (p.bpm || 120);
-  return songClockDown ? `<b>−${mmss(Math.max(0, totalSec - el))}</b> left` : `<b>${mmss(el)}</b> / ${mmss(totalSec)}`;
+  return songClockDown ? `<b>−${mmsst(Math.max(0, totalSec - el), true)}</b> left` : `<b>${mmsst(el)}</b> / ${mmsst(totalSec)}`;
 }
 function drawSongClock(){
   const c = document.getElementById('songClock'); if (!c || c.dataset.anim) return;
@@ -726,6 +726,8 @@ function flipSongClock(){
     drawSongClock(); void c.offsetWidth; c.classList.remove('in-' + dir);
   }, 160);
 }
+// m:ss.t (tenths); time left rounds up so it reaches 0:00.0 exactly at the end
+function mmsst(sec, up){ let d = up ? Math.ceil(sec * 10 - 1e-6) : Math.floor(sec * 10 + 1e-6); d = Math.max(0, d); const s = Math.floor(d / 10); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + '.' + (d % 10); }
 function mmss(sec){ sec = Math.round(sec); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); }
 function songHtml(p){
   const editable = !!p.songEditable;
