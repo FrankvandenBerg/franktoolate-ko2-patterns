@@ -86,6 +86,15 @@ td.dim{color:var(--muted)}
 .pat.drop,.grow.drop{outline:2px dashed var(--orange);outline-offset:2px}
 .edit{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;min-height:58px;align-content:center}
 .edhint{flex:1 1 300px}
+.songclock{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;display:inline-block;overflow:hidden;vertical-align:bottom;perspective:200px}
+.songclock .sc{display:inline-block;transition:transform .16s ease-in,opacity .16s ease-in}
+.songclock.out-up .sc{transform:translateY(-110%) rotateX(70deg);opacity:0}
+.songclock.out-down .sc{transform:translateY(110%) rotateX(-70deg);opacity:0}
+.songclock.in-up .sc{transform:translateY(110%) rotateX(-70deg);opacity:0;transition:none}
+.songclock.in-down .sc{transform:translateY(-110%) rotateX(70deg);opacity:0;transition:none}
+.songclock .sc i{font-style:normal;display:inline-block;margin-left:3px;opacity:.6;transition:transform .3s}
+.songclock.down .sc i{transform:rotate(180deg)}
+@media (prefers-reduced-motion:reduce){.songclock .sc,.songclock .sc i{transition:none!important}}
 .linkbtn{background:none;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit}
 .edit select,.edit input{font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink)}
 .edit input{width:4.5em}
@@ -287,7 +296,7 @@ details.lib[open]{display:flex;flex-direction:column;gap:12px}
 .pos button:disabled{opacity:.35;cursor:default}
 .foot{font-size:12px;color:var(--muted);line-height:1.55;max-width:75ch;margin:0}
 /* while the K.O. II itself plays, the tool only watches: controls are faded and can't be used */
-body.ko-playing .wrap :is(button:not(.tl-pos):not([data-roll]),select,input,label),body.ko-playing #pendingPop :is(button,input,label){opacity:.4;pointer-events:none}
+body.ko-playing .wrap :is(button:not(.tl-pos):not([data-roll]):not(.songclock),select,input,label),body.ko-playing #pendingPop :is(button,input,label){opacity:.4;pointer-events:none}
 body.ko-playing .wrap :is(.lane,.note,.tl-pos){pointer-events:none}
 #vu{position:fixed;left:16px;bottom:16px;z-index:40;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.12);padding:8px 10px 8px;font:500 11px var(--mono)}
 #vu .vh{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;color:var(--muted)}
@@ -406,6 +415,8 @@ const openRolls = new Set(); let rollsTouched = false;
 let projView = 'scenes';
 let pitchMode = true;   // confirmed on the device: a pad with its own MIDI channel plays the note it receives
 let view = 'projects', sounds = [], soundsQuery = '', soundsFilter = 'all', deviceSerial = null, sndDirNode = 1000, playingSound = null;
+let songClockDown = false; try { songClockDown = localStorage.getItem('ko2-songclock') === 'down'; } catch {}
+let songClockT = null;   // last song time in ticks (null = not playing)
 let songLoop = false; try { songLoop = localStorage.getItem('ko2-songloop') === 'on'; } catch {}
 const follow = { running: false, clocks: 0, raf: 0, lastNote: 0, heard: [], followScenes: true, guess: null, unexplained: 0 }; // focusSel: {kind:'scene', n} | {kind:'pattern', k}
 let projDirNode = 2000, DATA = [], soundNames = {}, cur = 0, sel = null, dev = null, player = null, playing = null; // playing: {kind:'pat'|'scene', key}
@@ -676,6 +687,7 @@ function updateSongProgress(t, source){
   const tl = document.getElementById('timeline'); if (!tl) return;
   const head = tl.querySelector('.tl-head'), label = document.getElementById('tlNow');
   const totalBars = +tl.dataset.total, total = totalBars * TPB;
+  songClockT = t == null || !total ? null : ((t % total) + total) % total; drawSongClock();
   if (t == null || !total) { head.hidden = true; tl.style.removeProperty('--tp'); if (label) label.textContent = 'bar 1'; return; }
   const tt = ((t % total) + total) % total;
   head.hidden = false; tl.style.setProperty('--tp', tt / total);
@@ -692,6 +704,26 @@ function updateSongProgress(t, source){
     render();
   }
 }
+function songClockText(t, totalSec){
+  if (t == null) return `<b>${mmss(totalSec)}</b> total`;
+  const p = DATA[cur], el = t / TPB * 4 * 60 / (p.bpm || 120);
+  return songClockDown ? `<b>−${mmss(Math.max(0, totalSec - el))}</b> left` : `<b>${mmss(el)}</b> / ${mmss(totalSec)}`;
+}
+function drawSongClock(){
+  const c = document.getElementById('songClock'); if (!c || c.dataset.anim) return;
+  c.classList.toggle('down', songClockDown);
+  c.innerHTML = `<span class="sc">${songClockText(songClockT, +c.dataset.sec)}${songClockT == null ? '' : '<i>▲</i>'}</span>`;
+}
+// Switch between time played and time left with a small flip: the old value rolls out, the new one rolls in.
+function flipSongClock(){
+  const c = document.getElementById('songClock'); if (!c) return;
+  const dir = songClockDown ? 'down' : 'up';
+  c.dataset.anim = '1'; c.classList.add('out-' + dir);
+  setTimeout(() => {
+    delete c.dataset.anim; c.classList.remove('out-' + dir); c.classList.add('in-' + dir);
+    drawSongClock(); void c.offsetWidth; c.classList.remove('in-' + dir);
+  }, 160);
+}
 function mmss(sec){ sec = Math.round(sec); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); }
 function songHtml(p){
   const editable = !!p.songEditable;
@@ -700,7 +732,7 @@ function songHtml(p){
   const total = bars.reduce((a, b) => a + b, 0);
   const on = isPlaying('song', String(cur));
   const sceneNos = [...new Set([...p.scenes.map(sc => sc[0]), ...p.song])].sort((a, b) => a - b);
-  let h = `<div class="ph"><span class="stat"><b>${p.song.length}</b> position${p.song.length === 1 ? '' : 's'}</span><span class="stat"><b>${total}</b> bars</span>${p.bpm ? `<span class="stat" title="Total duration at ${p.bpm} BPM (4/4)"><b>${mmss(total * 4 * 60 / p.bpm)}</b> total</span>` : ''}
+  let h = `<div class="ph"><span class="stat"><b>${p.song.length}</b> position${p.song.length === 1 ? '' : 's'}</span><span class="stat"><b>${total}</b> bars</span>${p.bpm ? `<button class="stat songclock" id="songClock" data-sec="${total * 4 * 60 / p.bpm}" title="Total duration at ${p.bpm} BPM (4/4). Click to switch between time played and time left while the song plays.">${'<span class="sc">' + songClockText(null, total * 4 * 60 / p.bpm) + '</span>'}</button>` : ''}
     <button class="play" data-play="song" aria-pressed="${on}" ${player ? '' : 'disabled'} title="${player ? 'Play the song on the K.O. II' : 'Connect the K.O. II first'}">${on ? '■ stop' : '▶ play song'}</button><button class="play loopbtn" id="songLoop" aria-pressed="${songLoop}" title="${songLoop ? 'Loop is on: the song starts again at position 1' : 'Loop is off: the song stops at the end'}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg> loop</button></div><div class="song">`;
   h += p.song.map((n, i) => `<span class="pos"><span class="k">${i + 1}</span>` + (editable
       ? `<select data-song-scene="${i}" aria-label="Scene at position ${i + 1}">${sceneNos.map(x => `<option value="${x}"${x === n ? ' selected' : ''}>scene ${String(x).padStart(2, '0')}</option>`).join('')}</select>`
@@ -1691,6 +1723,7 @@ function drawHelp(){
 function openHelp(){ drawHelp(); $('#help').hidden = false; const q = $('#helpQ'); q.value = helpQuery; q.focus(); }
 document.addEventListener('click', ev => {
   if (!ev.target.closest) return;
+  if (ev.target.closest('#songClock')) { songClockDown = !songClockDown; try { localStorage.setItem('ko2-songclock', songClockDown ? 'down' : 'up'); } catch {} flipSongClock(); return; }
   const hb = ev.target.closest('[data-help]'); if (hb) { helpQuery = hb.dataset.help; openHelp(); return; }
   if (ev.target.closest('#helpOpen')) { const h = $('#help'); if (h && !h.hidden) h.hidden = true; else openHelp(); }
   else if (ev.target.closest('#helpClose')) $('#help').hidden = true;
