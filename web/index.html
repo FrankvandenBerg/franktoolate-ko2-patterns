@@ -115,6 +115,7 @@ td.dim{color:var(--muted)}
 .lab .keys.warn{border-color:var(--orange);color:var(--orange)}
 .lab .keys{font:500 9px var(--mono);border:1px solid var(--line);border-radius:3px;padding:0 3px;color:var(--muted)}
 .rollgrid.editing .lane{cursor:crosshair}
+.note.free{outline:1.5px dashed var(--ink,#222);outline-offset:-1.5px}
 .rollgrid.editing .note{cursor:grab;touch-action:none}
 .rollgrid.editing .note::after{content:"";position:absolute;right:0;top:0;bottom:0;width:6px;cursor:ew-resize}
 .note.picked{outline:2px solid var(--ink);outline-offset:1px;z-index:2}
@@ -752,7 +753,7 @@ function drawRoll(g){
         <label>Pitch <select id="edPitch">${Array.from({ length: 97 }, (_, i) => i + 12).map(m => `<option value="${m}"${m === n[4] ? ' selected' : ''}>${noteName(m)}${m === 60 ? ' (root)' : ''}</option>`).join('')}</select></label>
         <label>Velocity <input id="edVel" type="number" min="1" max="127" value="${n[3]}" style="width:4.5em"></label>
         <label>Length (steps) <input id="edLen" type="number" min="1" max="${bars * 16}" value="${Math.max(1, Math.round(n[2] / 24))}" style="width:4.5em"></label>
-        <button class="play del" id="edDel">✕ delete note</button>` : `<span class="stat">Click an empty spot to add a note, or press and drag to the right to draw a longer one. Drag a note to move it (also to another pad), drag its right edge to change its length. Select a note and press Delete to remove it. Hold Alt while dragging to leave the 1/16 grid. Pads with pitched notes show pitch rows; click ♪ pitch on any pad to show them. In the rows, click or drag up/down to set the pitch. ↑/↓ also changes the pitch of the selected note (Shift = octave).</span>`}
+        <button class="play del" id="edDel">✕ delete note</button>` : `<span class="stat">Click an empty spot to add a note, or press and drag to the right to draw a longer one. Drag a note to move it (also to another pad), drag its right edge to change its length. Select a note and press Delete to remove it. Hold Alt while dragging to leave the 1/16 grid. Notes off the grid (played freely on the K.O. II) have a dashed edge and keep their offset when you drag them. Pads with pitched notes show pitch rows; click ♪ pitch on any pad to show them. In the rows, click or drag up/down to set the pitch. ↑/↓ also changes the pitch of the selected note (Shift = octave).</span>`}
     </div>`;
   } else if (!x.notes) { el.innerHTML = h + `<p class="none">This pattern has no notes yet. Click "edit notes" to add some.</p>`; return; }
   h += `<div class="rollscroll"><div class="rollgrid${editing ? ' editing' : ''}" data-len="${len}" style="--gc:${GC[x.g]}"><div class="playhead" hidden></div><div class="lab" style="height:18px"></div><div class="ruler">`;
@@ -780,7 +781,7 @@ function drawRoll(g){
       const isP = pitchedSet.has(pd);
       const top = isP ? (hi - e[4]) * 6 + 4 : 4, hgt = isP ? 8 : 14;
       const lab = isP && w > 3 ? `<span class="nn">${noteName(e[4])}</span>` : '';
-      h += `<div class="note${editing && i === noteSel ? ' picked' : ''}${isP ? ' pitched' : ''}" data-ni="${i}" style="left:${l}%;width:${Math.min(w, 100 - l)}%;top:${top}px;height:${hgt}px;opacity:${.35 + .65 * e[3] / 127}" title="${noteName(e[4])} · step ${Math.floor(e[1] / 24) + 1} · velocity ${e[3]}">${lab}</div>`;
+      h += `<div class="note${editing && i === noteSel ? ' picked' : ''}${isP ? ' pitched' : ''}${e[1] % 24 ? ' free' : ''}" data-ni="${i}" style="left:${l}%;width:${Math.min(w, 100 - l)}%;top:${top}px;height:${hgt}px;opacity:${.35 + .65 * e[3] / 127}" title="${noteName(e[4])} · step ${Math.floor(e[1] / 24) + 1}${e[1] % 24 ? ` +${e[1] % 24} ticks (off grid)` : ''} · velocity ${e[3]}">${lab}</div>`;
     });
     h += `</div>`;
   }
@@ -803,7 +804,7 @@ function pianoLane(x, pd, ps, name, sid, bg, editing){
   x.ev.forEach((e, i) => {
     if (e[0] !== pd) return;
     const l = e[1] / x.bars / TPB * 100, w = Math.max(e[2], 12) / x.bars / TPB * 100;
-    h += `<div class="note pitched${editing && i === noteSel ? ' picked' : ''}" data-ni="${i}" style="left:${l}%;width:${Math.min(w, 100 - l)}%;top:${(hi - e[4]) * RH + 1}px;height:${RH - 2}px;opacity:${.35 + .65 * e[3] / 127}" title="${noteName(e[4])} · step ${Math.floor(e[1] / 24) + 1} · velocity ${e[3]}">${w > 3 ? `<span class="nn">${noteName(e[4])}</span>` : ''}</div>`;
+    h += `<div class="note pitched${editing && i === noteSel ? ' picked' : ''}${e[1] % 24 ? ' free' : ''}" data-ni="${i}" style="left:${l}%;width:${Math.min(w, 100 - l)}%;top:${(hi - e[4]) * RH + 1}px;height:${RH - 2}px;opacity:${.35 + .65 * e[3] / 127}" title="${noteName(e[4])} · step ${Math.floor(e[1] / 24) + 1}${e[1] % 24 ? ` +${e[1] % 24} ticks (off grid)` : ''} · velocity ${e[3]}">${w > 3 ? `<span class="nn">${noteName(e[4])}</span>` : ''}</div>`;
   });
   return h + `</div>`;
 }
@@ -878,7 +879,7 @@ document.addEventListener('pointermove', ev => {
   const dt = (ev.clientX - drag.startX) / rect.width * len;
   if (Math.abs(ev.clientX - drag.startX) > 2) drag.moved = true;
   if (drag.mode === 'move') {
-    let t = drag.startTick + dt; t = ev.altKey ? Math.round(t) : Math.round(t / 24) * 24;
+    let t = ev.altKey ? Math.round(drag.startTick + dt) : drag.startTick + Math.round(dt / 24) * 24; // whole steps keep a free note's offset
     drag.tick = Math.max(0, Math.min(len - 1, t));
     drag.el.style.left = (drag.tick / len * 100) + '%';
     const under = document.elementFromPoint(ev.clientX, ev.clientY);
@@ -902,7 +903,7 @@ document.addEventListener('pointermove', ev => {
     drag.dur = Math.max(ev.altKey ? 1 : 24, Math.min(len - drag.startTick, d));
     drag.el.style.width = (drag.dur / len * 100) + '%';
   } else {
-    let d = drag.startDur + dt; d = ev.altKey ? Math.round(d) : Math.round(d / 24) * 24;
+    let d = ev.altKey ? Math.round(drag.startDur + dt) : drag.startDur + Math.round(dt / 24) * 24;
     drag.dur = Math.max(ev.altKey ? 1 : 24, Math.min(len - drag.startTick, d));
     drag.el.style.width = (drag.dur / len * 100) + '%';
   }
@@ -1640,7 +1641,7 @@ const HOWTO = [
   ['Scenes', 'Follow the K.O. II', `<p>Press play on the K.O. II: the tool shows playheads and lights the notes that sound. It recognises the scene by the notes it hears (the K.O. II does not report scene or group changes). Scenes that sound exactly the same cannot be told apart.</p><p>While the K.O. II plays, the tool's controls are greyed out; the <b>notes</b> buttons still work, so you can open piano rolls.</p>`],
   ['Scenes', 'Change or clear a scene', `<p>Pick another pattern for a group in the scene, or use <b>✕ clear scene</b> (optionally with its patterns). Click a scene or pattern and press <kbd>Delete</kbd> to remove it. Changes are staged until you write them.</p>`],
   ['Patterns', 'Move or swap patterns', `<p>Drag a pattern onto another pattern to swap them, or onto a group to move it there. Scenes follow along.</p>`],
-  ['Notes', 'Edit notes', `<p>Open a group's piano roll with <b>▸ notes</b> and click <b>✎ edit notes</b>.</p><ul><li>Click an empty spot to add a note; press and drag right for a longer one.</li><li>Drag a note to move it (also to another pad); drag its right edge to change its length.</li><li>Select a note and press <kbd>Delete</kbd> to remove it. Hold <kbd>Alt</kbd> to leave the 1/16 grid.</li></ul>`],
+  ['Notes', 'Edit notes', `<p>Open a group's piano roll with <b>▸ notes</b> and click <b>✎ edit notes</b>.</p><ul><li>Click an empty spot to add a note; press and drag right for a longer one.</li><li>Drag a note to move it (also to another pad); drag its right edge to change its length.</li><li>Select a note and press <kbd>Delete</kbd> to remove it. Hold <kbd>Alt</kbd> to leave the 1/16 grid.</li><li>Notes recorded off the grid (free timing on the K.O. II) have a dashed edge. They keep their exact timing, also when written back, and keep their offset when you drag them.</li></ul>`],
   ['Notes', 'Pitch (melodies)', `<p>Pads with pitched notes show pitch rows with note names. Click <b>♪ pitch</b> on any pad to show them. Click in a row, or drag a note up/down, to set its pitch. <kbd>↑</kbd>/<kbd>↓</kbd> change the pitch of the selected note (<kbd>Shift</kbd> = octave).</p><p>To hear pitches from the tool, a pad needs its own MIDI channel; the tool gives melody pads one automatically.</p>`],
   ['Mixer', 'Mute and solo groups', `<p>Turn groups on/off with keys <kbd>A</kbd>–<kbd>D</kbd>; hold <kbd>S</kbd> and press a group key to solo it. This only changes what the tool plays; nothing is written.</p>`],
   ['Song', 'The song timeline', `<p>The blue Song section shows each position as a block (Scene 1, S2…), as long as it really lasts on the K.O. II. A position ends when the longest pattern of its scene comes round again, so it can be shorter when that pattern was already part-way.</p><p>Click a block to open that scene.</p>`],
