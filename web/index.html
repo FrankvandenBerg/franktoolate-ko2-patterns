@@ -1866,7 +1866,13 @@ function heardNote(pitch){
     // But when the notes clearly belong to another scene for a while, the K.O. II is not playing the song
     // (you play and switch scenes yourself): then the tool stops tracking the song until the next start.
     const songScene = p.song[songTrack.pos];
-    if (tied.includes(songScene) || sig(songScene) === sig(best.n)) { follow.disagree = 0; return; }
+    // judge only the notes heard since this position started: right after a change the last bars still
+    // hold the previous scene, and counting those stopped the song bar early in every new position
+    const since = follow.heard.filter(h => h.t >= songTrack.startClock * 4);
+    if (since.length < 5) { follow.disagree = 0; return; }
+    const sc2 = sceneIndex(p).map(sc => ({ n: sc.n, score: sceneScore(sc, since) })).sort((a, b) => b.score - a.score);
+    const tied2 = sc2.filter(x => sc2[0].score - x.score < 0.02).map(x => x.n);
+    if (sc2[0].score < 0.8 || tied2.includes(songScene) || sig(songScene) === sig(sc2[0].n)) { follow.disagree = 0; return; }
     if (++follow.disagree < 6) return;
     Object.assign(songTrack, { ended: true, off: true, endClock: follow.clocks });
     follow.unexplained++;   // or the device's song/scenes changed (patterns moved on the K.O. II): read the project after stop
