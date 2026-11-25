@@ -557,7 +557,7 @@
           if (!this.muted.has(e.g)) {
             this.output.send([0x90 | (e.ch || 0), e.note, e.vel], at);
             this.output.send([0x80 | (e.ch || 0), e.note, 0], at + e.dur * this.msPerTick);
-            if (this.onNote) { const g = e.g, v = e.vel; setTimeout(() => this.onNote(g, v), Math.max(0, at - performance.now())); }
+            if (this.onNote) { const g = e.g, v = e.vel, n = e.note; setTimeout(() => this.onNote(g, v, n), Math.max(0, at - performance.now())); }
           }
           if (++this.idx >= events.length) { this.idx = 0; this.loop++; if (this.once) break; }
         }

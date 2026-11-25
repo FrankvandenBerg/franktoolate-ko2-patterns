@@ -310,7 +310,19 @@ body.ko-playing .wrap :is(.lane,.note,.tl-pos){pointer-events:none}
 #vuOpen{position:fixed;left:16px;bottom:16px;z-index:40;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:4px 10px;font:500 11px var(--mono);cursor:pointer;color:var(--ink)}
 .loopbtn{display:inline-flex;align-items:center;gap:5px}
 .loopbtn svg{display:block}
-body.view-sounds #vu,body.view-sounds #vuOpen{display:none}
+body.view-sounds #vu,body.view-sounds #vuOpen,body.view-visuals #vu,body.view-visuals #vuOpen{display:none}
+.viz{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.viz-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.viz-bar #vizInfo{flex:1}
+.viz-styles{display:flex;gap:4px}
+.viz-styles button{font:600 13px var(--mono);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:7px 14px;cursor:pointer}
+.viz-styles button[aria-checked="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.viz-stage{position:relative;aspect-ratio:16/9;width:100%;border-radius:14px;overflow:hidden;background:#09090b}
+.viz-stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.viz-stage:fullscreen{border-radius:0;aspect-ratio:auto}
+.viz-idle{position:absolute;inset:0;display:grid;place-items:center;color:#8d8f94;font:500 15px var(--mono);letter-spacing:.04em;pointer-events:none;transition:opacity .4s}
+.viz-idle.off{opacity:0}
+body.ko-playing .wrap .viz :is(button){opacity:1!important;pointer-events:auto!important}
 .snd-tabs{display:flex;gap:6px;margin-bottom:14px}
 .snd-tabs button{font:600 13px var(--mono);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:7px 14px;cursor:pointer}
 .snd-tabs button[aria-selected="true"]{background:var(--ink);color:var(--bg,#fff);border-color:var(--ink)}
@@ -377,6 +389,7 @@ body.ko-busy :is([data-play],[data-snd],.tile-hit):not([aria-pressed="true"]){op
     <nav class="mainnav" id="viewTabs" aria-label="Main">
       <button data-view="projects" aria-pressed="true">Projects</button>
       <button data-view="sounds">Sounds</button>
+      <button data-view="visuals">Visuals</button>
       <!--admin-tab-->
     </nav>
     <div class="conn">
@@ -399,6 +412,17 @@ body.ko-busy :is([data-play],[data-snd],.tile-hit):not([aria-pressed="true"]){op
   <nav class="projects" id="projects" aria-label="Projects" hidden></nav>
   <p class="projhint" id="projHint" hidden>Switch between projects on the K.O. II (<kbd>MAIN</kbd> + pad <kbd>1</kbd>–<kbd>9</kbd>).</p>
   <section class="card" id="project" hidden></section>
+  <section class="viz" id="visuals" hidden>
+    <div class="viz-bar">
+      <div class="viz-styles" role="radiogroup" aria-label="Animation style">
+        <button data-viz="vector" role="radio">Vector</button><button data-viz="bloom" role="radio">Bloom</button><button data-viz="burst" role="radio">Burst</button><button data-viz="bars" role="radio">Bars</button>
+      </div>
+      <span class="stat" id="vizInfo">Press play on the K.O. II</span>
+      <button class="play" id="vizFull" title="Full screen (Esc to leave)">⤢ full screen</button>
+    </div>
+    <div class="viz-stage" id="vizStage"><canvas id="vizCanvas"></canvas><div class="viz-idle" id="vizIdle">Press ▶ on the K.O. II</div></div>
+    <p class="stat">Reacts to the notes and the clock the K.O. II sends over USB (and to the tool's own playback). Each group has its colour; louder notes make bigger moves, every beat and bar gives a pulse. Vector: one curve per group, drawn like in a vector program with its knots and handles; the notes push the knots around.</p>
+  </section>
   <p class="foot">Patterns are numbered 01–99 per group (A–D), as in the Teenage Engineering guide. "b" is the pattern length in bars (1 bar = 384 ticks at 96 ppqn), "n" the number of notes. Pads are named by the labels printed on them (7 8 9 / 4 5 6 / 1 2 3 / . 0 ENTER). Left/right arrows switch scene (also while a scene plays), keys 1–9 switch project, space plays or stops the selected scene. Moving: drag a pattern onto another pattern to swap them, or onto a group to move it there; within a group, scenes follow along. Deleting a pattern leaves its group silent in scenes that used it; clearing a scene also removes it from the song. Playback sends MIDI notes on channel 1 (group A = notes 36–47, B = 48–59, C = 60–71, D = 72–83, in the order . 0 ENTER 1–9); do not leave the K.O. II in record mode, or the notes will be recorded. Pads in keys mode play at their root note.</p>
   <footer class="legal">K.O. II Patterns is an independent project. It is not affiliated with, endorsed by or supported by Teenage Engineering. "Teenage Engineering", "EP-133" and "K.O. II" are their trademarks and are only used to describe compatibility. · <a href="privacy">Privacy</a> · <a href="terms">Terms</a> · <a href="about">About</a> · <a href="https://github.com/FrankvandenBerg/franktoolate-ko2-patterns" target="_blank" rel="noopener">Source code (AGPL-3.0)</a></footer>
 </div>
@@ -432,7 +456,7 @@ $('#connect').addEventListener('click', async () => {
     if (player) player.stop();
     dev = await KO2.connect();
     player = new Player(dev.output);
-    player.onNote = vuHit;
+    player.onNote = (g, v, pitch) => { vuHit(g, v); vizNote(g, v, pitch); };
     player.onEnd = () => { playing = null; render(); };
     dev.onRealtime = onDeviceMidi;
     dev.onBusy = showSyncing;
@@ -495,6 +519,7 @@ function render(){
   if (!DATA.length) return;
   const vt = $('#viewTabs'); if (vt) vt.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view));
   document.body.classList.toggle('view-sounds', view === 'sounds');
+  if (showVisuals()) return;
   if (view === 'sounds') { $('#intro').hidden = true; $('#projects').hidden = true; drawPending(null); renderSounds(); return; }
   if (cur >= DATA.length) cur = 0;
   $('#intro').hidden = true;
@@ -1659,6 +1684,193 @@ function groupForNote(pitch, ch){
   return best;
 }
 drawVuShell();
+// ---------- Visuals: a reactive animation screen driven by the K.O. II's notes and clock ----------
+const viz = { style: 'bloom', items: [], level: { A: 0, B: 0, C: 0, D: 0 }, flash: 0, raf: 0, last: 0, col: {}, W: 0, H: 0, dpr: 1, t: 0, lastHit: 0 };
+viz.style = 'vector'; try { viz.style = localStorage.getItem('ko2-viz') || 'vector'; } catch {}
+const VIZ_G = ['A', 'B', 'C', 'D'];
+function showVisuals(){
+  const on = view === 'visuals', sec = $('#visuals');
+  document.body.classList.toggle('view-visuals', on);
+  sec.hidden = !on;
+  if (!on) { if (viz.raf) { cancelAnimationFrame(viz.raf); viz.raf = 0; } return false; }
+  $('#intro').hidden = true; $('#projects').hidden = true; $('#project').hidden = true; drawPending(null);
+  sec.querySelectorAll('[data-viz]').forEach(b => b.setAttribute('aria-checked', b.dataset.viz === viz.style));
+  const cs = getComputedStyle(document.documentElement);
+  for (const g of VIZ_G) viz.col[g] = cs.getPropertyValue('--' + g.toLowerCase()).trim() || '#ff5a1f';
+  vizResize();
+  if (!viz.raf) { viz.last = performance.now(); viz.raf = requestAnimationFrame(vizFrame); }
+  return true;
+}
+function vizResize(){
+  const c = $('#vizCanvas'); if (!c) return;
+  const r = c.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  viz.W = Math.max(1, r.width); viz.H = Math.max(1, r.height); viz.dpr = dpr;
+  c.width = Math.round(viz.W * dpr); c.height = Math.round(viz.H * dpr);
+}
+window.addEventListener('resize', () => { if (view === 'visuals') vizResize(); });
+document.addEventListener('fullscreenchange', () => { if (view === 'visuals') setTimeout(vizResize, 50); });
+function vizRgba(hex, a){
+  const h = hex.replace('#', ''); const n = parseInt(h.length === 3 ? h.split('').map(x => x + x).join('') : h, 16);
+  return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
+}
+// A note: g = group A–D (may be unknown), vel 1–127, pitch (may be unknown)
+function vizNote(g, vel, pitch){
+  if (view !== 'visuals') return;
+  g = VIZ_G.includes(g) ? g : VIZ_G[(pitch || 0) % 4];
+  const v = Math.max(0.2, Math.min(1, (vel || 100) / 127)), gi = VIZ_G.indexOf(g), W = viz.W, H = viz.H, now = performance.now();
+  viz.level[g] = Math.max(viz.level[g], v); viz.lastHit = now;
+  const py = pitch == null ? 0.5 : 1 - Math.max(0, Math.min(1, (pitch - 36) / 60));
+  if (viz.style === 'vector') {
+    vizVectorHit(gi, v, pitch);
+  } else if (viz.style === 'bloom') {
+    const x = W * (0.2 + gi * 0.2) + (Math.random() - .5) * W * 0.06, y = H * (0.25 + py * 0.5) + (Math.random() - .5) * H * 0.06;
+    viz.items.push({ k: 'ring', g, x, y, r: 6 + v * 20, vr: 140 + v * 380, life: 1, decay: 0.75 + (1 - v) * 0.5, w: 2 + v * 10 });
+    viz.items.push({ k: 'dot', g, x, y, r: 10 + v * 60, life: 1, decay: 2.2 });
+  } else if (viz.style === 'burst') {
+    const cx = W / 2 + Math.cos(gi * Math.PI / 2 + Math.PI / 4) * W * 0.12, cy = H / 2 + Math.sin(gi * Math.PI / 2 + Math.PI / 4) * H * 0.18;
+    const n = Math.round(10 + v * 34);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, sp = (80 + Math.random() * 420) * (0.5 + v);
+      viz.items.push({ k: 'spark', g, x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 1.5 + Math.random() * 3.5 * v, life: 1, decay: 0.6 + Math.random() * 0.8 });
+    }
+  } else {
+    viz.items.push({ k: 'drop', g, x: W * (0.125 + gi * 0.25), y: H * (0.15 + py * 0.6), r: 4 + v * 10, life: 1, decay: 1.4 });
+  }
+  if (viz.items.length > 1600) viz.items.splice(0, viz.items.length - 1600);
+}
+// Clock: every beat a pulse, every bar a bigger one
+function vizBeat(bar){
+  if (view !== 'visuals') return;
+  viz.flash = Math.max(viz.flash, bar ? 1 : 0.45);
+  if (viz.style === 'vector' && viz.paths) for (const path of viz.paths) for (const k of path) k.va += (Math.random() - .5) * (bar ? 3 : 1.2);
+}
+// Vector: four bezier curves (one per group), each with knots and handles like in a drawing program.
+// Every knot is a spring around a slowly drifting rest point; notes push the knots of their group.
+const VIZ_KNOTS = 7;
+function vizVectorInit(){
+  viz.paths = VIZ_G.map((g, gi) => Array.from({ length: VIZ_KNOTS }, (_, i) => ({
+    ox: 0, oy: 0, vx: 0, vy: 0,                          // offset from the rest point and its speed
+    a: (Math.random() - .5) * 1.2, va: 0,                // handle angle
+    l: 40 + Math.random() * 40, vl: 0,                   // handle length
+    ph: Math.random() * Math.PI * 2 })));
+}
+function vizVectorHit(gi, v, pitch){
+  if (!viz.paths) vizVectorInit();
+  const path = viz.paths[gi];
+  const i = pitch == null ? Math.floor(Math.random() * VIZ_KNOTS) : pitch % VIZ_KNOTS;
+  for (const [j, f] of [[i, 1], [i - 1, .4], [i + 1, .4]]) {
+    const k = path[j]; if (!k) continue;
+    k.vy += (Math.random() < .5 ? -1 : 1) * v * f * 900; k.vx += (Math.random() - .5) * v * f * 500;
+    k.va += (Math.random() - .5) * v * f * 10; k.vl += v * f * 420;
+  }
+}
+function vizVectorDraw(ctx, dt, W, H, active){
+  if (!viz.paths) vizVectorInit();
+  const t = viz.t, dim = active ? 1 : 0.55;
+  viz.paths.forEach((path, gi) => {
+    const col = viz.col[VIZ_G[gi]], pts = [];
+    path.forEach((k, i) => {
+      // spring back to the rest point, with damping
+      k.vx += (-60 * k.ox - 7 * k.vx) * dt; k.vy += (-60 * k.oy - 7 * k.vy) * dt;
+      k.ox += k.vx * dt; k.oy += k.vy * dt;
+      k.va += (-8 * k.a - 3 * k.va) * dt + Math.sin(t * 0.7 + k.ph) * 0.4 * dt; k.a += k.va * dt;
+      k.vl += (-30 * (k.l - 60) - 6 * k.vl) * dt; k.l = Math.max(8, k.l + k.vl * dt);
+      const bx = W * (0.06 + 0.88 * i / (VIZ_KNOTS - 1)) + Math.sin(t * 0.21 + k.ph) * W * 0.02;
+      const by = H * (0.2 + gi * 0.2) + Math.sin(t * 0.37 + k.ph + i * 0.9) * H * 0.07;
+      const x = bx + k.ox, y = by + k.oy, ca = Math.cos(k.a) * k.l, sa = Math.sin(k.a) * k.l;
+      pts.push({ x, y, ix: x - ca, iy: y - sa, ox: x + ca, oy: y + sa });
+    });
+    // the curve
+    ctx.strokeStyle = vizRgba(col, 0.95 * dim); ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.bezierCurveTo(pts[i - 1].ox, pts[i - 1].oy, pts[i].ix, pts[i].iy, pts[i].x, pts[i].y);
+    ctx.stroke();
+    // handles: thin lines with small round ends
+    ctx.strokeStyle = `rgba(255,255,255,${0.35 * dim})`; ctx.lineWidth = 1;
+    for (const p of pts) { ctx.beginPath(); ctx.moveTo(p.ix, p.iy); ctx.lineTo(p.ox, p.oy); ctx.stroke(); }
+    ctx.fillStyle = '#09090b'; ctx.strokeStyle = `rgba(255,255,255,${0.7 * dim})`;
+    for (const p of pts) for (const [hx, hy] of [[p.ix, p.iy], [p.ox, p.oy]]) { ctx.beginPath(); ctx.arc(hx, hy, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    // knots: small squares in the group colour
+    for (const p of pts) { ctx.fillStyle = '#09090b'; ctx.fillRect(p.x - 4, p.y - 4, 8, 8); ctx.strokeStyle = vizRgba(col, dim); ctx.lineWidth = 1.5; ctx.strokeRect(p.x - 4, p.y - 4, 8, 8); }
+  });
+}
+function vizFrame(now){
+  viz.raf = 0;
+  if (view !== 'visuals') return;
+  const c = $('#vizCanvas'); if (!c) return;
+  const ctx = c.getContext('2d'), dt = Math.min(0.05, (now - viz.last) / 1000), W = viz.W, H = viz.H;
+  viz.last = now; viz.t += dt;
+  ctx.setTransform(viz.dpr, 0, 0, viz.dpr, 0, 0);
+  const active = follow.running || !!playing;
+  $('#vizIdle').classList.toggle('off', active || now - viz.lastHit < 3000);
+  const info = $('#vizInfo');
+  if (info) info.textContent = follow.running ? `K.O. II playing · bar ${Math.floor(follow.clocks / 96) + 1} · beat ${Math.floor(follow.clocks / 24) % 4 + 1}` : playing ? 'The tool is playing' : 'Press play on the K.O. II';
+  // background: trails for burst, clean for the others; a soft glow on beats
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = viz.style === 'burst' ? 'rgba(9,9,11,0.22)' : '#09090b';
+  ctx.fillRect(0, 0, W, H);
+  if (viz.flash > 0.01) {
+    const gr = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
+    gr.addColorStop(0, `rgba(255,255,255,${0.10 * viz.flash})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+  }
+  if (viz.style === 'vector') { ctx.globalCompositeOperation = 'source-over'; vizVectorDraw(ctx, dt, W, H, active); }
+  // idle: four slow breathing dots in the group colours
+  if (!active && viz.style !== 'vector') VIZ_G.forEach((g, i) => {
+    const a = 0.25 + 0.15 * Math.sin(viz.t * 1.3 + i);
+    ctx.fillStyle = vizRgba(viz.col[g], a); ctx.beginPath(); ctx.arc(W * (0.2 + i * 0.2), H * 0.5 + Math.sin(viz.t * 0.8 + i * 1.7) * 8, 6, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.globalCompositeOperation = 'lighter';
+  if (viz.style === 'bars') {
+    const bw = W / 4;
+    VIZ_G.forEach((g, i) => {
+      const lv = viz.level[g], h = lv * H * 0.82;
+      const gr = ctx.createLinearGradient(0, H, 0, H - h);
+      gr.addColorStop(0, vizRgba(viz.col[g], 0.95)); gr.addColorStop(1, vizRgba(viz.col[g], 0.15));
+      ctx.fillStyle = gr;
+      const x = i * bw + bw * 0.18, w = bw * 0.64, rad = Math.min(14, w / 2);
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, H - h, w, h + rad, rad) : ctx.rect(x, H - h, w, h); ctx.fill();
+      ctx.fillStyle = vizRgba(viz.col[g], 0.12 + lv * 0.25); ctx.fillRect(i * bw, 0, bw, H);
+    });
+  }
+  // the beat: 16 steps along the bottom, the current one lit
+  if (follow.running) {
+    const step = Math.floor(follow.clocks / 6) % 16;
+    for (let i = 0; i < 16; i++) {
+      ctx.fillStyle = i === step ? 'rgba(255,255,255,0.85)' : (i % 4 === 0 ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.09)');
+      ctx.beginPath(); ctx.arc(W * (0.5 + (i - 7.5) * 0.035), H - 18, i === step ? 4 : 2.5, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  const keep = [];
+  for (const it of viz.items) {
+    it.life -= dt * it.decay; if (it.life <= 0) continue; keep.push(it);
+    const col = viz.col[it.g];
+    if (it.k === 'ring') {
+      it.r += it.vr * dt; it.vr *= Math.pow(0.25, dt);
+      ctx.strokeStyle = vizRgba(col, it.life * 0.9); ctx.lineWidth = it.w * it.life;
+      ctx.beginPath(); ctx.arc(it.x, it.y, it.r, 0, Math.PI * 2); ctx.stroke();
+    } else if (it.k === 'dot') {
+      const gr = ctx.createRadialGradient(it.x, it.y, 0, it.x, it.y, it.r);
+      gr.addColorStop(0, vizRgba(col, 0.8 * it.life)); gr.addColorStop(1, vizRgba(col, 0));
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(it.x, it.y, it.r, 0, Math.PI * 2); ctx.fill();
+    } else if (it.k === 'spark') {
+      const drag = Math.pow(0.12, dt); it.vx *= drag; it.vy *= drag; it.x += it.vx * dt; it.y += it.vy * dt;
+      ctx.fillStyle = vizRgba(col, it.life); ctx.beginPath(); ctx.arc(it.x, it.y, it.r * (0.4 + it.life), 0, Math.PI * 2); ctx.fill();
+    } else if (it.k === 'drop') {
+      ctx.fillStyle = vizRgba(col, it.life); ctx.beginPath(); ctx.arc(it.x, it.y - (1 - it.life) * 40, it.r * it.life + 2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  viz.items = keep;
+  for (const g of VIZ_G) viz.level[g] = Math.max(0, viz.level[g] - dt * 1.8);
+  viz.flash = Math.max(0, viz.flash - dt * 3);
+  viz.raf = requestAnimationFrame(vizFrame);
+}
+document.addEventListener('click', ev => {
+  if (!ev.target.closest) return;
+  const b = ev.target.closest('[data-viz]');
+  if (b) { viz.style = b.dataset.viz; viz.items = []; try { localStorage.setItem('ko2-viz', viz.style); } catch {} document.querySelectorAll('[data-viz]').forEach(x => x.setAttribute('aria-checked', x.dataset.viz === viz.style)); return; }
+  if (ev.target.closest('#vizFull')) { const st = $('#vizStage'); if (document.fullscreenElement) document.exitFullscreen(); else if (st.requestFullscreen) st.requestFullscreen(); }
+});
 // Mobile: the bar folds into a menu (☰)
 function setNav(open){
   const bar = document.querySelector('.appbar'); bar.classList.toggle('nav-open', open);
@@ -1751,8 +1963,8 @@ function onDeviceMidi(d){
     if (follow.unexplained) sync.timer = setTimeout(() => syncActive('after recording'), 1500);
   }
   else if (st === 0xF2) { follow.clocks = ((d[2] << 7) | d[1]) * 6; songTrackFromSpp(); }
-  else if (st === 0xF8) { if (follow.running) { follow.clocks++; if (follow.clocks % 96 === 0) songTrackBar(); scheduleFollowFrame(); } }
-  else if ((st & 0xF0) === 0x90 && d[2] > 0) { follow.lastNote = performance.now(); if (follow.running) heardNote(d[1]); vuHit(groupForNote(d[1], (st & 15) + 1), d[2]); }
+  else if (st === 0xF8) { if (follow.running) { follow.clocks++; if (follow.clocks % 96 === 0) songTrackBar(); if (follow.clocks % 24 === 0) vizBeat(follow.clocks % 96 === 0); scheduleFollowFrame(); } }
+  else if ((st & 0xF0) === 0x90 && d[2] > 0) { follow.lastNote = performance.now(); if (follow.running) heardNote(d[1]); const gN = groupForNote(d[1], (st & 15) + 1); vuHit(gN, d[2]); vizNote(gN, d[2], d[1]); }
 }
 // Scene bridge: the K.O. II does not say which scene it plays, but it sends every note it plays
 // (with its pitch) in time with its clock. Compare the last notes with what each scene would play
@@ -2006,7 +2218,7 @@ document.addEventListener('click', ev => {
   if (ev.target.closest('#doAssignCh')) { assignChannels(cur); return; }
   if (ev.target.closest('[data-modal-close]') || ev.target.id === 'modal') { closeModal(); return; }
   const rb = ev.target.closest('[data-restore]'); if (rb) { restoreBackup(+rb.dataset.restore, rb.dataset.when); return; }
-  const vb = ev.target.closest('[data-view]'); if (vb) { stopPlay(); view = vb.dataset.view; $('#viewTabs').querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view)); if (DATA.length) render(); else if (view === 'sounds') renderSounds(); else { $('#project').hidden = true; } return; }
+  const vb = ev.target.closest('[data-view]'); if (vb) { if (vb.dataset.view !== 'visuals') stopPlay(); view = vb.dataset.view; $('#viewTabs').querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view)); if (DATA.length) render(); else if (showVisuals()) {} else if (view === 'sounds') renderSounds(); else { $('#project').hidden = true; $('#intro').hidden = false; } return; }
   const sb2 = ev.target.closest('[data-snd]'); if (sb2) { toggleSound(+sb2.dataset.snd); return; }
   const et = ev.target.closest('[data-edit]');
   if (et) { editGroup = editGroup === et.dataset.edit ? null : et.dataset.edit; noteSel = -1; drawRolls(); return; }
