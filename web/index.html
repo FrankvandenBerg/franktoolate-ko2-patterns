@@ -1596,7 +1596,8 @@ document.addEventListener('focusout', ev => {
   if (inp && editingSound === +inp.dataset.sname) renameSound(+inp.dataset.sname, inp.value);
 });
 async function toggleSound(node){
-  if (!dev || busyNow()) return;
+  if (!dev) { status('Connect the K.O. II first to hear its sounds.', true); return; }
+  if (busyNow()) { status('The tool is reading or writing the K.O. II; try again when that is done.', true); return; }
   try {
     if (playingSound != null) await dev.stopSound(playingSound);
     if (playingSound === node) { playingSound = null; }
