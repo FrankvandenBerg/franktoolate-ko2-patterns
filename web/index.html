@@ -86,6 +86,9 @@ td.dim{color:var(--muted)}
 .pat.drop,.grow.drop{outline:2px dashed var(--orange);outline-offset:2px}
 .edit{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;min-height:58px;align-content:center}
 .edhint{flex:1 1 300px}
+/* Sounds: the search bar floats under the top bar while you scroll */
+.snd-search{position:sticky;top:calc(var(--abh,56px) + 6px);z-index:30;background:var(--panel);margin:0 -18px;padding:8px 18px;min-height:0;border-bottom:1px solid transparent;transition:box-shadow .2s,border-color .2s}
+.snd-search.stuck{border-bottom-color:var(--line);box-shadow:0 6px 12px -8px rgba(0,0,0,.25)}
 .songclock{width:22ch;text-align:left;white-space:nowrap;flex:none;font-variant-numeric:tabular-nums;background:none;border:0;padding:0;font:13px var(--mono);color:var(--muted);cursor:pointer;display:inline-block;overflow:hidden;vertical-align:bottom;perspective:200px}
 .songclock .sc{pointer-events:none;display:inline-block;transition:transform .16s ease-in,opacity .16s ease-in}
 .songclock.out-up .sc{transform:translateY(-110%) rotateX(70deg);opacity:0}
@@ -1323,7 +1326,12 @@ const fmtSlot = n => String(n).padStart(3, '0');
 const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 // Your own sounds live in the user slots (700 and up); factory sounds can't be shared.
 const canShare = x => x.slot >= 700;
+// height of the sticky top bar, so things can float just below it
+function setAppbarH(){ const b = document.querySelector('.appbar'); if (b) document.documentElement.style.setProperty('--abh', b.offsetHeight + 'px'); }
+window.addEventListener('resize', setAppbarH);
+window.addEventListener('scroll', () => { const sb = document.querySelector('.snd-search'); if (sb) sb.classList.toggle('stuck', sb.getBoundingClientRect().top <= (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--abh')) || 56) + 7); }, { passive: true });
 function renderSounds(){
+  setAppbarH();
   const card = $('#project'); card.hidden = false;
   const tabs = `<div class="snd-tabs" role="tablist"><button role="tab" data-stab="device" aria-selected="${soundsTab === 'device'}">On my K.O. II</button><button role="tab" data-stab="shared" aria-selected="${soundsTab === 'shared'}">Shared by everyone${shared ? ` <span class="cnt">${shared.length}</span>` : ''}</button></div>`;
   if (soundsTab === 'shared') { card.innerHTML = tabs + sharedHtml(); if (!shared) loadShared(); return; }
@@ -1335,7 +1343,7 @@ function renderSounds(){
   const kinds = [...new Set(SOUND_KINDS.map(k => k[1]))];
   let h = tabs + `<div class="ph"><h2>Sounds</h2><span class="stat"><b>${sounds.length}</b> sounds</span><span class="stat"><b>${Math.round(total)}</b> s in total</span><span class="stat"><b>${sounds.filter(x => use[x.slot]).length}</b> used on pads</span></div>`;
   if (!sounds.length) { card.innerHTML = h + `<p class="none">Connect the K.O. II to read its sound library.</p>`; return; }
-  h += `<div class="edit"><label>Search <span class="qwrap"><input id="sndQ" type="text" value="${esc(soundsQuery)}" placeholder="name or slot" style="width:14em"><button type="button" id="sndQClear" title="Clear the search" aria-label="Clear the search" ${soundsQuery ? '' : 'hidden'}>✕</button></span></label>
+  h += `<div class="edit snd-search"><label>Search <span class="qwrap"><input id="sndQ" type="text" value="${esc(soundsQuery)}" placeholder="name or slot" style="width:14em"><button type="button" id="sndQClear" title="Clear the search" aria-label="Clear the search" ${soundsQuery ? '' : 'hidden'}>✕</button></span></label>
     <label>Show <select id="sndF">${['all', 'used', 'unused', ...kinds].map(k => `<option value="${k}"${k === soundsFilter ? ' selected' : ''}>${k}</option>`).join('')}</select></label>
     <span class="stat">${list.length} shown · click a tile to hear it on the K.O. II</span></div>`;
   const groups = [];
