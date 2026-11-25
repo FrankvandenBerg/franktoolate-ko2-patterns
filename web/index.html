@@ -86,6 +86,9 @@ td.dim{color:var(--muted)}
 .pat.drop,.grow.drop{outline:2px dashed var(--orange);outline-offset:2px}
 .edit{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;min-height:58px;align-content:center}
 .edhint{flex:1 1 300px}
+@media (max-width:1200px){.roll .edit{min-height:94px}}
+@media (max-width:760px){.roll .edit{min-height:150px}}
+.edit .qz{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap;padding-left:8px;border-left:1px solid var(--line)}
 /* Sounds: the search bar floats under the top bar while you scroll */
 .t-del{margin-left:auto;background:none;border:0;padding:3px;line-height:0;color:var(--muted);cursor:pointer;border-radius:4px}
 .t-del:hover{color:var(--orange);background:rgba(255,90,31,.1)}
@@ -840,6 +843,9 @@ function drawRoll(g){
     const n = x.ev[noteSel];
     h += `<div class="edit">
       <label>Length (bars) <input id="edBars" type="number" min="1" max="99" value="${bars}" style="width:4.5em"></label>
+      <span class="qz"><label>Quantize <select id="qzGrid">${QZ_GRIDS.map(([t, l]) => `<option value="${t}"${t === qz.grid ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label title="100% puts notes exactly on the grid; less moves them part of the way, keeping some feel">strength <select id="qzStr">${[100, 75, 50, 25].map(v => `<option value="${v}"${v === qz.str ? ' selected' : ''}>${v}%</option>`).join('')}</select></label>
+        <button class="play" id="qzGo" title="Snap the notes to the grid (the selected note, or all notes when none is selected). Undo with the change list.">⊞ quantize ${n ? 'note' : 'all'}</button></span>
       ${n ? `<span>Selected note: pad ${KO2Lib.PAD_LABELS[n[0]]}, step ${Math.floor(n[1] / 24) + 1}</span>
         <label>Pitch <select id="edPitch">${Array.from({ length: 97 }, (_, i) => i + 12).map(m => `<option value="${m}"${m === n[4] ? ' selected' : ''}>${noteName(m)}${m === 60 ? ' (root)' : ''}</option>`).join('')}</select></label>
         <label>Velocity <input id="edVel" type="number" min="1" max="127" value="${n[3]}" style="width:4.5em"></label>
@@ -900,6 +906,28 @@ function pianoLane(x, pd, ps, name, sid, bg, editing){
   return h + `</div>`;
 }
 // Apply edited notes to the pattern and stage the change (one entry per pattern while editing).
+// Quantize: snap note starts to a grid (ticks at 384 per bar), fully or part of the way.
+const QZ_GRIDS = [[96, '1/4'], [48, '1/8'], [32, '1/8 T'], [24, '1/16'], [16, '1/16 T'], [12, '1/32']];
+const qz = { grid: 24, str: 100 };
+try { Object.assign(qz, JSON.parse(localStorage.getItem('ko2-qz') || '{}')); } catch {}
+function quantizeNotes(){
+  const x = editPattern(); if (!x) return;
+  const len = Math.max(1, x.bars) * TPB, only = x.ev[noteSel] ? noteSel : -1;
+  let moved = 0;
+  const ev2 = x.ev.map((e, i) => {
+    if (only >= 0 && i !== only) return [...e];
+    const target = Math.round(e[1] / qz.grid) * qz.grid;
+    let t = Math.round(e[1] + (target - e[1]) * qz.str / 100);
+    if (t >= len) t = 0;                     // a note snapped past the end wraps to the start of the pattern
+    if (t !== e[1]) moved++;
+    const n = [...e]; n[1] = t; return n;
+  });
+  if (!moved) { status(`Already on the ${QZ_GRIDS.find(g => g[0] === qz.grid)[1]} grid.`); return; }
+  const idx = only >= 0 ? sortedIndexAfterBuild(ev2, only) : -1;
+  commitNotes(x, ev2);
+  noteSel = idx; drawRolls();
+  status(`Quantized ${moved} note${moved === 1 ? '' : 's'} to ${QZ_GRIDS.find(g => g[0] === qz.grid)[1]} at ${qz.str}%.`);
+}
 function commitNotes(x, ev, bars){
   const p = DATA[cur];
   try {
@@ -2208,7 +2236,7 @@ const HOWTO = [
   ['Scenes', 'Follow the K.O. II', `<p>Press play on the K.O. II: the tool shows playheads and lights the notes that sound. It recognises the scene by the notes it hears (the K.O. II does not report scene or group changes). Scenes that sound exactly the same cannot be told apart.</p><p>While the K.O. II plays, the tool's controls are greyed out; the <b>notes</b> buttons still work, so you can open piano rolls.</p>`],
   ['Scenes', 'Change or clear a scene', `<p>Pick another pattern for a group in the scene, or use <b>✕ clear scene</b> (optionally with its patterns). Click a scene or pattern and press <kbd>Delete</kbd> to remove it. Changes are staged until you write them.</p>`],
   ['Patterns', 'Move or swap patterns', `<p>Drag a pattern onto another pattern to swap them, or onto a group to move it there. Scenes follow along.</p>`],
-  ['Notes', 'Edit notes', `<p>Open a group's piano roll with <b>▸ notes</b> and click <b>✎ edit notes</b>.</p><ul><li>Click an empty spot to add a note; press and drag right for a longer one.</li><li>Drag a note to move it (also to another pad); drag its right edge to change its length.</li><li>Select a note and press <kbd>Delete</kbd> to remove it. Hold <kbd>Alt</kbd> to leave the 1/16 grid.</li><li>Pads with pitched notes show pitch rows; click <b>♪ pitch</b> on any pad to show them. In the rows, click or drag up/down to set the pitch. <kbd>↑</kbd>/<kbd>↓</kbd> changes the pitch of the selected note (<kbd>Shift</kbd> = octave).</li><li>Notes recorded off the grid (free timing on the K.O. II) have a dashed edge. They keep their exact timing, also when written back, and keep their offset when you drag them.</li></ul>`],
+  ['Notes', 'Edit notes', `<p>Open a group's piano roll with <b>▸ notes</b> and click <b>✎ edit notes</b>.</p><ul><li>Click an empty spot to add a note; press and drag right for a longer one.</li><li>Drag a note to move it (also to another pad); drag its right edge to change its length.</li><li>Select a note and press <kbd>Delete</kbd> to remove it. Hold <kbd>Alt</kbd> to leave the 1/16 grid.</li><li>Pads with pitched notes show pitch rows; click <b>♪ pitch</b> on any pad to show them. In the rows, click or drag up/down to set the pitch. <kbd>↑</kbd>/<kbd>↓</kbd> changes the pitch of the selected note (<kbd>Shift</kbd> = octave).</li><li><b>⊞ quantize</b> snaps notes to a grid (1/4 to 1/32, also triplets): the selected note, or all notes when none is selected. Strength below 100% moves them only part of the way, so some feel stays.</li><li>Notes recorded off the grid (free timing on the K.O. II) have a dashed edge. They keep their exact timing, also when written back, and keep their offset when you drag them.</li></ul>`],
   ['Notes', 'Pitch (melodies)', `<p>Pads with pitched notes show pitch rows with note names. Click <b>♪ pitch</b> on any pad to show them. Click in a row, or drag a note up/down, to set its pitch. <kbd>↑</kbd>/<kbd>↓</kbd> change the pitch of the selected note (<kbd>Shift</kbd> = octave).</p><p>To hear pitches from the tool, a pad needs its own MIDI channel; the tool gives melody pads one automatically.</p>`],
   ['Mixer', 'Mute and solo groups', `<p>Turn groups on/off with keys <kbd>A</kbd>–<kbd>D</kbd>; hold <kbd>S</kbd> and press a group key to solo it. This only changes what the tool plays; nothing is written.</p>`],
   ['Song', 'The song timeline', `<p>The blue Song section shows each position as a block (Scene 1, S2…), as long as it really lasts on the K.O. II. A position ends when the longest pattern of its scene comes round again, so it can be shorter when that pattern was already part-way.</p><p>Click a block to open that scene.</p>`],
@@ -2545,6 +2573,7 @@ document.addEventListener('click', ev => {
   const rt = ev.target.closest('[data-roll]');
   if (rt) { const g = rt.dataset.roll; rollsTouched = true; if (openRolls.has(g)) { openRolls.delete(g); if (editGroup === g) editGroup = null; } else openRolls.add(g); render(); return; }
   if (ev.target.closest('#edDel')) { deleteSelectedNote(); return; }
+  if (ev.target.closest('#qzGo')) { quantizeNotes(); return; }
   if (ev.target.closest('#dlProj')) { saveFile(DATA[cur].tar, `KO2-P${DATA[cur].p}-edited-${stamp()}.tar`); return; }
   if (ev.target.closest('#undoProj')) { stopPlay(); const p = DATA[cur]; DATA[cur] = makeProject(p.p, p.orig, p.node); sel = null; status('Changes undone.'); render(); return; }
   const mx = ev.target.closest('[data-mix]');
@@ -2594,6 +2623,7 @@ document.addEventListener('change', ev => {
   if (ev.target.id === 'autoWrite') { autoWrite = ev.target.checked; autoWriteFailed = false; try { localStorage.setItem('ko2-autowrite', autoWrite ? '1' : '0'); } catch {} drawPending(DATA[cur]); scheduleAutoWrite(); return; }
   if (ev.target.id === 'sndF') { soundsFilter = ev.target.value; renderSounds(); return; }
   if (ev.target.id === 'followScenes') { follow.followScenes = ev.target.checked; follow.heard = []; return; }
+  if (ev.target.id === 'qzGrid' || ev.target.id === 'qzStr') { qz[ev.target.id === 'qzGrid' ? 'grid' : 'str'] = +ev.target.value; try { localStorage.setItem('ko2-qz', JSON.stringify(qz)); } catch {} return; }
   if (ev.target.id === 'edVel' || ev.target.id === 'edLen' || ev.target.id === 'edBars' || ev.target.id === 'edPitch') {
     const x = editPattern(); if (!x) return;
     if (ev.target.id === 'edBars') { const b = Math.max(1, Math.min(99, Math.round(+ev.target.value || 1))); commitNotes(x, x.ev, b); return; }
