@@ -422,7 +422,7 @@ body.ko-busy :is([data-play],[data-snd],.tile-hit):not([aria-pressed="true"]){op
       <button class="play" id="vizFull" title="Full screen (Esc to leave)">⤢ full screen</button>
     </div>
     <div class="viz-stage" id="vizStage"><canvas id="vizCanvas"></canvas><div class="viz-idle" id="vizIdle">Press ▶ on the K.O. II</div></div>
-    <p class="stat">Reacts to the notes and the clock the K.O. II sends over USB (and to the tool's own playback). Each group has its colour; louder notes make bigger moves, every beat and bar gives a pulse. Vector: one curve per group (or per pad that plays), drawn like in a vector program with its knots and handles; the notes push the knots around.</p>
+    <p class="stat">Reacts to the notes and the clock the K.O. II sends over USB (and to the tool's own playback). Each group has its colour; louder notes make bigger moves, every beat and bar gives a pulse. Per group or per pad: one shape (line, bloom, burst or bar) for each group, or for each pad that plays. Vector: curves drawn like in a vector program with its knots and handles; the notes push the knots around.</p>
   </section>
   <p class="foot">Patterns are numbered 01–99 per group (A–D), as in the Teenage Engineering guide. "b" is the pattern length in bars (1 bar = 384 ticks at 96 ppqn), "n" the number of notes. Pads are named by the labels printed on them (7 8 9 / 4 5 6 / 1 2 3 / . 0 ENTER). Left/right arrows switch scene (also while a scene plays), keys 1–9 switch project, space plays or stops the selected scene. Moving: drag a pattern onto another pattern to swap them, or onto a group to move it there; within a group, scenes follow along. Deleting a pattern leaves its group silent in scenes that used it; clearing a scene also removes it from the song. Playback sends MIDI notes on channel 1 (group A = notes 36–47, B = 48–59, C = 60–71, D = 72–83, in the order . 0 ENTER 1–9); do not leave the K.O. II in record mode, or the notes will be recorded. Pads in keys mode play at their root note.</p>
   <footer class="legal">K.O. II Patterns is an independent project. It is not affiliated with, endorsed by or supported by Teenage Engineering. "Teenage Engineering", "EP-133" and "K.O. II" are their trademarks and are only used to describe compatibility. · <a href="privacy">Privacy</a> · <a href="terms">Terms</a> · <a href="about">About</a> · <a href="https://github.com/FrankvandenBerg/franktoolate-ko2-patterns" target="_blank" rel="noopener">Source code (AGPL-3.0)</a></footer>
@@ -1699,7 +1699,7 @@ function showVisuals(){
   $('#intro').hidden = true; $('#projects').hidden = true; $('#project').hidden = true; drawPending(null);
   sec.querySelectorAll('[data-viz]').forEach(b => b.setAttribute('aria-checked', b.dataset.viz === viz.style));
   sec.querySelectorAll('[data-vizlines]').forEach(b => b.setAttribute('aria-checked', b.dataset.vizlines === viz.lines));
-  $('#vizLines').hidden = viz.style !== 'vector';
+  
   const cs = getComputedStyle(document.documentElement);
   for (const g of VIZ_G) viz.col[g] = cs.getPropertyValue('--' + g.toLowerCase()).trim() || '#ff5a1f';
   vizResize();
@@ -1719,27 +1719,32 @@ function vizRgba(hex, a){
   return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
 }
 // A note: g = group A–D (may be unknown), vel 1–127, pitch (may be unknown)
+// A note: g = group A–D (may be unknown), vel 1–127, pitch and pad (may be unknown).
+// Every style draws on "slots": the four groups, or (per pad) every pad that plays.
 function vizNote(g, vel, pitch, pad){
   if (view !== 'visuals') return;
   g = VIZ_G.includes(g) ? g : VIZ_G[(pitch || 0) % 4];
-  const v = Math.max(0.2, Math.min(1, (vel || 100) / 127)), gi = VIZ_G.indexOf(g), W = viz.W, H = viz.H, now = performance.now();
-  viz.level[g] = Math.max(viz.level[g], v); viz.lastHit = now;
+  const v = Math.max(0.2, Math.min(1, (vel || 100) / 127)), W = viz.W, H = viz.H;
+  viz.lastHit = performance.now();
+  const slot = vizSlot(g, pad, pitch), col = vizShade(viz.col[g], slot.pad), pos = slot.ty;
+  slot.lv = Math.max(slot.lv || 0, v);
   const py = pitch == null ? 0.5 : 1 - Math.max(0, Math.min(1, (pitch - 36) / 60));
   if (viz.style === 'vector') {
-    vizVectorHit(gi, v, pitch, pad);
+    vizVectorHit(slot, v, pitch);
   } else if (viz.style === 'bloom') {
-    const x = W * (0.2 + gi * 0.2) + (Math.random() - .5) * W * 0.06, y = H * (0.25 + py * 0.5) + (Math.random() - .5) * H * 0.06;
-    viz.items.push({ k: 'ring', g, x, y, r: 6 + v * 20, vr: 140 + v * 380, life: 1, decay: 0.75 + (1 - v) * 0.5, w: 2 + v * 10 });
-    viz.items.push({ k: 'dot', g, x, y, r: 10 + v * 60, life: 1, decay: 2.2 });
+    const x = W * (0.06 + 0.88 * pos) + (Math.random() - .5) * W * 0.04, y = H * (0.2 + py * 0.6) + (Math.random() - .5) * H * 0.06;
+    const sc = viz.lines === 'pad' ? 0.75 : 1;
+    viz.items.push({ k: 'ring', col, x, y, r: 6 + v * 20, vr: (140 + v * 380) * sc, life: 1, decay: 0.75 + (1 - v) * 0.5, w: 2 + v * 10 * sc });
+    viz.items.push({ k: 'dot', col, x, y, r: (10 + v * 60) * sc, life: 1, decay: 2.2 });
   } else if (viz.style === 'burst') {
-    const cx = W / 2 + Math.cos(gi * Math.PI / 2 + Math.PI / 4) * W * 0.12, cy = H / 2 + Math.sin(gi * Math.PI / 2 + Math.PI / 4) * H * 0.18;
+    const a0 = (viz.lines === 'pad' ? pos : (VIZ_G.indexOf(g) + 0.5) / 4) * Math.PI * 2 - Math.PI / 2, cx = W / 2 + Math.cos(a0) * W * 0.16, cy = H / 2 + Math.sin(a0) * H * 0.24;
     const n = Math.round(10 + v * 34);
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, sp = (80 + Math.random() * 420) * (0.5 + v);
-      viz.items.push({ k: 'spark', g, x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 1.5 + Math.random() * 3.5 * v, life: 1, decay: 0.6 + Math.random() * 0.8 });
+      viz.items.push({ k: 'spark', col, x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 1.5 + Math.random() * 3.5 * v, life: 1, decay: 0.6 + Math.random() * 0.8 });
     }
   } else {
-    viz.items.push({ k: 'drop', g, x: W * (0.125 + gi * 0.25), y: H * (0.15 + py * 0.6), r: 4 + v * 10, life: 1, decay: 1.4 });
+    viz.items.push({ k: 'drop', col, slot, y: H * (0.15 + py * 0.6), r: 4 + v * 10, life: 1, decay: 1.4 });
   }
   if (viz.items.length > 1600) viz.items.splice(0, viz.items.length - 1600);
 }
@@ -1759,19 +1764,21 @@ function vizKnots(n){
 // and fade out after a while without notes.
 function vizPaths(){
   if (viz.lines === 'pad') return [...viz.padPaths.values()];
-  if (!viz.groupPaths) viz.groupPaths = VIZ_G.map((g, gi) => ({ key: g, g, pad: null, knots: vizKnots(VIZ_KNOTS), y: 0.2 + gi * 0.2, ty: 0.2 + gi * 0.2, alpha: 1, last: 0 }));
+  if (!viz.groupPaths) viz.groupPaths = VIZ_G.map((g, gi) => ({ key: g, g, pad: null, knots: vizKnots(VIZ_KNOTS), y: 0.2 + gi * 0.2, ty: 0.2 + gi * 0.2, alpha: 1, last: 0, lv: 0 }));
   return viz.groupPaths;
 }
 function vizVectorInit(){ viz.groupPaths = null; viz.padPaths = new Map(); }
-function vizVectorHit(gi, v, pitch, pad){
+// the slot for a note: its group, or its pad (made when a pad is first heard)
+function vizSlot(g, pad, pitch){
   if (!viz.padPaths) vizVectorInit();
-  const g = VIZ_G[gi]; let path;
-  if (viz.lines === 'pad') {
-    const key = g + (pad == null ? '?' + (pitch ?? 0) : pad);
-    path = viz.padPaths.get(key);
-    if (!path) { path = { key, g, pad, knots: vizKnots(5), y: 0.5, ty: 0.5, alpha: 0, last: 0 }; viz.padPaths.set(key, path); vizLayoutPads(); path.y = path.ty; }
-    path.last = performance.now();
-  } else path = vizPaths()[gi];
+  if (viz.lines !== 'pad') return vizPaths()[VIZ_G.indexOf(g)];
+  const key = g + (pad == null ? '?' + (pitch ?? 0) : pad);
+  let path = viz.padPaths.get(key);
+  if (!path) { path = { key, g, pad, knots: vizKnots(5), y: 0.5, ty: 0.5, alpha: 0, last: 0, lv: 0 }; viz.padPaths.set(key, path); vizLayoutPads(); path.y = path.ty; }
+  path.last = performance.now();
+  return path;
+}
+function vizVectorHit(path, v, pitch){
   const kn = path.knots, i = pitch == null ? Math.floor(Math.random() * kn.length) : pitch % kn.length;
   const sc = viz.lines === 'pad' ? 0.6 : 1;
   for (const [j, f] of [[i, 1], [i - 1, .4], [i + 1, .4]]) {
@@ -1793,9 +1800,10 @@ function vizShade(hex, pad){
   const ch = c => Math.round(f >= 0 ? c + (255 - c) * f : c * (1 + f));
   return '#' + [n >> 16 & 255, n >> 8 & 255, n & 255].map(c => ch(c).toString(16).padStart(2, '0')).join('');
 }
-function vizVectorDraw(ctx, dt, W, H, active){
+// pad slots fade in, and out after 12 s without notes; positions glide to their place; levels fall back
+function vizSlotsTick(dt){
   if (!viz.padPaths) vizVectorInit();
-  const t = viz.t, now = performance.now();
+  const now = performance.now();
   if (viz.lines === 'pad') {
     let changed = false;
     for (const [key, p] of viz.padPaths) {
@@ -1805,9 +1813,13 @@ function vizVectorDraw(ctx, dt, W, H, active){
     }
     if (changed) vizLayoutPads();
   }
+  for (const p of vizPaths()) { p.y += (p.ty - p.y) * Math.min(1, dt * 3); p.lv = Math.max(0, (p.lv || 0) - dt * 1.8); }
+}
+function vizVectorDraw(ctx, dt, W, H, active){
+  if (!viz.padPaths) vizVectorInit();
+  const t = viz.t;
   const paths = vizPaths(), many = paths.length > 8;
   paths.forEach((path, pi) => {
-    path.y += (path.ty - path.y) * Math.min(1, dt * 3);
     const dim = (active ? 1 : 0.55) * path.alpha, col = vizShade(viz.col[path.g], path.pad), kn = path.knots, pts = [];
     const amp = many ? 0.6 / Math.sqrt(paths.length / 4) : 1;
     kn.forEach((k, i) => {
@@ -1856,6 +1868,7 @@ function vizFrame(){
     gr.addColorStop(0, `rgba(255,255,255,${0.10 * viz.flash})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
   }
+  vizSlotsTick(dt);
   if (viz.style === 'vector') { ctx.globalCompositeOperation = 'source-over'; vizVectorDraw(ctx, dt, W, H, active); }
   // idle: four slow breathing dots in the group colours
   if (!active && viz.style !== 'vector') VIZ_G.forEach((g, i) => {
@@ -1864,15 +1877,17 @@ function vizFrame(){
   });
   ctx.globalCompositeOperation = 'lighter';
   if (viz.style === 'bars') {
-    const bw = W / 4;
-    VIZ_G.forEach((g, i) => {
-      const lv = viz.level[g], h = lv * H * 0.82;
+    const slots = vizPaths().slice().sort((a, b) => a.ty - b.ty), n = Math.max(1, slots.length), bw = W / n;
+    slots.forEach((sl, i) => {
+      sl.bx = i * bw + bw / 2; sl.bw = bw;
+      const col = vizShade(viz.col[sl.g], sl.pad), lv = sl.lv || 0, h = lv * H * 0.82, al = sl.alpha;
       const gr = ctx.createLinearGradient(0, H, 0, H - h);
-      gr.addColorStop(0, vizRgba(viz.col[g], 0.95)); gr.addColorStop(1, vizRgba(viz.col[g], 0.15));
+      gr.addColorStop(0, vizRgba(col, 0.95 * al)); gr.addColorStop(1, vizRgba(col, 0.15 * al));
       ctx.fillStyle = gr;
       const x = i * bw + bw * 0.18, w = bw * 0.64, rad = Math.min(14, w / 2);
       ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, H - h, w, h + rad, rad) : ctx.rect(x, H - h, w, h); ctx.fill();
-      ctx.fillStyle = vizRgba(viz.col[g], 0.12 + lv * 0.25); ctx.fillRect(i * bw, 0, bw, H);
+      ctx.fillStyle = vizRgba(col, (0.12 + lv * 0.25) * al); ctx.fillRect(i * bw, 0, bw, H);
+      if (sl.pad != null) { ctx.fillStyle = vizRgba(col, 0.8 * al); ctx.font = '11px "IBM Plex Mono", monospace'; ctx.textAlign = 'center'; ctx.fillText(sl.g + ' ' + (KO2Lib.PAD_LABELS[sl.pad] ?? sl.pad), sl.bx, 18); ctx.textAlign = 'left'; }
     });
   }
   // the beat: 16 steps along the bottom, the current one lit
@@ -1886,7 +1901,7 @@ function vizFrame(){
   const keep = [];
   for (const it of viz.items) {
     it.life -= dt * it.decay; if (it.life <= 0) continue; keep.push(it);
-    const col = viz.col[it.g];
+    const col = it.col;
     if (it.k === 'ring') {
       it.r += it.vr * dt; it.vr *= Math.pow(0.25, dt);
       ctx.strokeStyle = vizRgba(col, it.life * 0.9); ctx.lineWidth = it.w * it.life;
@@ -1899,18 +1914,18 @@ function vizFrame(){
       const drag = Math.pow(0.12, dt); it.vx *= drag; it.vy *= drag; it.x += it.vx * dt; it.y += it.vy * dt;
       ctx.fillStyle = vizRgba(col, it.life); ctx.beginPath(); ctx.arc(it.x, it.y, it.r * (0.4 + it.life), 0, Math.PI * 2); ctx.fill();
     } else if (it.k === 'drop') {
-      ctx.fillStyle = vizRgba(col, it.life); ctx.beginPath(); ctx.arc(it.x, it.y - (1 - it.life) * 40, it.r * it.life + 2, 0, Math.PI * 2); ctx.fill();
+      const dx = it.slot.bx ?? W / 2;
+      ctx.fillStyle = vizRgba(col, it.life); ctx.beginPath(); ctx.arc(dx, it.y - (1 - it.life) * 40, it.r * it.life + 2, 0, Math.PI * 2); ctx.fill();
     }
   }
   viz.items = keep;
-  for (const g of VIZ_G) viz.level[g] = Math.max(0, viz.level[g] - dt * 1.8);
   viz.flash = Math.max(0, viz.flash - dt * 3);
   viz.raf = requestAnimationFrame(vizFrame);
 }
 document.addEventListener('click', ev => {
   if (!ev.target.closest) return;
   const b = ev.target.closest('[data-viz]');
-  if (b) { viz.style = b.dataset.viz; viz.items = []; try { localStorage.setItem('ko2-viz', viz.style); } catch {} document.querySelectorAll('[data-viz]').forEach(x => x.setAttribute('aria-checked', x.dataset.viz === viz.style)); $('#vizLines').hidden = viz.style !== 'vector'; return; }
+  if (b) { viz.style = b.dataset.viz; viz.items = []; try { localStorage.setItem('ko2-viz', viz.style); } catch {} document.querySelectorAll('[data-viz]').forEach(x => x.setAttribute('aria-checked', x.dataset.viz === viz.style));  return; }
   const ln = ev.target.closest('[data-vizlines]');
   if (ln) { viz.lines = ln.dataset.vizlines; try { localStorage.setItem('ko2-vizlines', viz.lines); } catch {} document.querySelectorAll('[data-vizlines]').forEach(x => x.setAttribute('aria-checked', x.dataset.vizlines === viz.lines)); return; }
   if (ev.target.closest('#vizFull')) { const st = $('#vizStage'); if (document.fullscreenElement) document.exitFullscreen(); else if (st.requestFullscreen) st.requestFullscreen(); }
