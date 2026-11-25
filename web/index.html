@@ -322,6 +322,24 @@ body.view-sounds #vu,body.view-sounds #vuOpen,body.view-visuals #vu,body.view-vi
 .viz-stage:fullscreen{border-radius:0;aspect-ratio:auto}
 .viz-idle{position:absolute;inset:0;display:grid;place-items:center;color:#8d8f94;font:500 15px var(--mono);letter-spacing:.04em;pointer-events:none;transition:opacity .4s}
 .viz-idle.off{opacity:0}
+.viz-gear{position:absolute;top:10px;right:10px;width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.35);color:#ddd;font-size:16px;cursor:pointer;opacity:0;transition:opacity .3s}
+.viz-stage:hover .viz-gear,.viz-stage:fullscreen .viz-gear:focus{opacity:.8}
+.viz-prefs{position:absolute;top:10px;right:10px;bottom:10px;width:min(300px,calc(100% - 20px));overflow:auto;background:rgba(14,14,17,.92);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px 14px;color:#e6e6e3;font:12px var(--mono);z-index:2}
+.viz-prefs h4{margin:12px 0 6px;font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:#9a9c9f}
+.viz-prefs h4:first-of-type{margin-top:0}
+.viz-prefs .vp-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.viz-prefs .vp-head button{background:none;border:0;color:#bbb;font-size:15px;cursor:pointer}
+.viz-prefs .cols{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.viz-prefs .cols label{display:flex;align-items:center;gap:6px}
+.viz-prefs input[type=color]{width:26px;height:22px;padding:0;border:1px solid rgba(255,255,255,.25);border-radius:4px;background:none;cursor:pointer}
+.viz-prefs .sl{display:grid;grid-template-columns:96px 1fr 34px;align-items:center;gap:6px;margin:5px 0}
+.viz-prefs .sl input{width:100%;accent-color:var(--orange)}
+.viz-prefs select{font:12px var(--mono);background:#1c1d20;color:#e6e6e3;border:1px solid rgba(255,255,255,.2);border-radius:5px;padding:3px}
+.viz-prefs .sl output{text-align:right;color:#9a9c9f}
+.viz-prefs .tg{display:flex;flex-wrap:wrap;gap:4px 12px}
+.viz-prefs .tg label{display:flex;align-items:center;gap:5px;cursor:pointer}
+.viz-prefs .vp-foot{display:flex;gap:6px;margin-top:12px}
+.viz-prefs .vp-foot button{font:12px var(--mono);border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#e6e6e3;border-radius:6px;padding:5px 9px;cursor:pointer}
 body.ko-playing .wrap .viz :is(button){opacity:1!important;pointer-events:auto!important}
 .snd-tabs{display:flex;gap:6px;margin-bottom:14px}
 .snd-tabs button{font:600 13px var(--mono);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:7px 14px;cursor:pointer}
@@ -419,9 +437,9 @@ body.ko-busy :is([data-play],[data-snd],.tile-hit):not([aria-pressed="true"]){op
       </div>
       <div class="viz-styles" id="vizLines" role="radiogroup" aria-label="Lines"><button data-vizlines="group" role="radio" title="One line per group A–D">per group</button><button data-vizlines="pad" role="radio" title="One line for every pad that plays">per pad</button></div>
       <span class="stat" id="vizInfo">Press play on the K.O. II</span>
-      <button class="play" id="vizFull" title="Full screen (Esc to leave)">⤢ full screen</button>
+      <button class="play" id="vizPrefsBtn" aria-expanded="false" aria-controls="vizPrefs" title="Colours, randomness and more">⚙ settings</button><button class="play" id="vizFull" title="Full screen (Esc to leave)">⤢ full screen</button>
     </div>
-    <div class="viz-stage" id="vizStage"><canvas id="vizCanvas"></canvas><div class="viz-idle" id="vizIdle">Press ▶ on the K.O. II</div></div>
+    <div class="viz-stage" id="vizStage"><canvas id="vizCanvas"></canvas><div class="viz-idle" id="vizIdle">Press ▶ on the K.O. II</div><button class="viz-gear" id="vizGear" title="Settings" aria-label="Settings">⚙</button><div class="viz-prefs" id="vizPrefs" hidden></div></div>
     <p class="stat">Reacts to the notes and the clock the K.O. II sends over USB (and to the tool's own playback). Each group has its colour; louder notes make bigger moves, every beat and bar gives a pulse. Per group or per pad: one shape (line, bloom, burst or bar) for each group, or for each pad that plays. Vector: curves drawn like in a vector program with its knots and handles; the notes push the knots around.</p>
   </section>
   <p class="foot">Patterns are numbered 01–99 per group (A–D), as in the Teenage Engineering guide. "b" is the pattern length in bars (1 bar = 384 ticks at 96 ppqn), "n" the number of notes. Pads are named by the labels printed on them (7 8 9 / 4 5 6 / 1 2 3 / . 0 ENTER). Left/right arrows switch scene (also while a scene plays), keys 1–9 switch project, space plays or stops the selected scene. Moving: drag a pattern onto another pattern to swap them, or onto a group to move it there; within a group, scenes follow along. Deleting a pattern leaves its group silent in scenes that used it; clearing a scene also removes it from the song. Playback sends MIDI notes on channel 1 (group A = notes 36–47, B = 48–59, C = 60–71, D = 72–83, in the order . 0 ENTER 1–9); do not leave the K.O. II in record mode, or the notes will be recorded. Pads in keys mode play at their root note.</p>
@@ -1688,9 +1706,57 @@ function notePad(pitch, ch){
 }
 drawVuShell();
 // ---------- Visuals: a reactive animation screen driven by the K.O. II's notes and clock ----------
-const viz = { style: 'bloom', items: [], level: { A: 0, B: 0, C: 0, D: 0 }, flash: 0, raf: 0, last: 0, col: {}, W: 0, H: 0, dpr: 1, t: 0, lastHit: 0 };
+const viz = { bars: 0, style: 'bloom', items: [], level: { A: 0, B: 0, C: 0, D: 0 }, flash: 0, raf: 0, last: 0, col: {}, W: 0, H: 0, dpr: 1, t: 0, lastHit: 0 };
 viz.style = 'vector'; viz.lines = 'group'; try { viz.style = localStorage.getItem('ko2-viz') || 'vector'; viz.lines = localStorage.getItem('ko2-vizlines') || 'group'; } catch {}
 const VIZ_G = ['A', 'B', 'C', 'D'];
+// Settings for the visuals (stored in this browser). Colours empty = the app's group colours.
+const VIZ_DEFAULTS = { col: { A: '', B: '', C: '', D: '' }, bg: '#09090b', accent: '#ffffff', size: 1, sizeRand: 0, posRand: 0.3, energy: 1, decay: 1, trails: 0, pulse: 1, line: 2.2, knots: 5, glow: 0, drift: 1, hue: 0, mirror: 'off', auto: 0, handles: true, knotMarks: true, labels: true, steps: true };
+const VIZ_SLIDERS = [
+  ['size', 'Size', 0.3, 2.5, 0.05], ['sizeRand', 'Size random', 0, 1, 0.01], ['posRand', 'Place random', 0, 1, 0.01],
+  ['energy', 'Energy', 0.2, 2.5, 0.05], ['decay', 'Fade speed', 0.3, 3, 0.05], ['trails', 'Trails', 0, 0.95, 0.01],
+  ['pulse', 'Beat pulse', 0, 2, 0.05], ['line', 'Line width', 0.5, 8, 0.1], ['knots', 'Knots', 3, 12, 1],
+  ['glow', 'Glow', 0, 1, 0.01], ['drift', 'Drift speed', 0, 4, 0.05], ['hue', 'Colour cycle', 0, 1, 0.01]];
+let vizPrefs = JSON.parse(JSON.stringify(VIZ_DEFAULTS));
+try { const sp = JSON.parse(localStorage.getItem('ko2-vizprefs') || 'null'); if (sp) vizPrefs = { ...vizPrefs, ...sp, col: { ...vizPrefs.col, ...(sp.col || {}) } }; } catch {}
+function vizSavePrefs(){ try { localStorage.setItem('ko2-vizprefs', JSON.stringify(vizPrefs)); } catch {} }
+// random factor around 1: r = 0 gives 1, r = 1 gives 0..2
+const vizRnd = r => 1 + (Math.random() * 2 - 1) * r;
+function vizApplyColours(){
+  const cs = getComputedStyle(document.documentElement);
+  viz.base = {}; for (const g of VIZ_G) viz.col[g] = viz.base[g] = vizPrefs.col[g] || cs.getPropertyValue('--' + g.toLowerCase()).trim() || '#ff5a1f';
+  const st = $('#vizStage'); if (st) st.style.background = vizPrefs.bg;
+}
+function drawVizPrefs(){
+  const el = $('#vizPrefs'); if (!el) return;
+  const cs = getComputedStyle(document.documentElement), def = g => cs.getPropertyValue('--' + g.toLowerCase()).trim();
+  const tg = (k, label) => `<label><input type="checkbox" data-vp="${k}"${vizPrefs[k] ? ' checked' : ''}> ${label}</label>`;
+  el.innerHTML = `<div class="vp-head"><strong>Settings</strong><button data-vp-close aria-label="Close the settings">✕</button></div>
+    <h4>Colours</h4><div class="cols">${VIZ_G.map(g => `<label><input type="color" data-vpcol="${g}" value="${vizPrefs.col[g] || def(g)}"> ${g}</label>`).join('')}
+      <label><input type="color" data-vp="bg" value="${vizPrefs.bg}"> back</label><label><input type="color" data-vp="accent" value="${vizPrefs.accent}"> handles</label></div>
+    <h4>Shapes</h4>${VIZ_SLIDERS.map(([k, label, mn, mx, st]) => `<div class="sl"><span>${label}</span><input type="range" data-vp="${k}" min="${mn}" max="${mx}" step="${st}" value="${vizPrefs[k]}"><output>${(+vizPrefs[k]).toFixed(st < 1 ? (st < 0.1 ? 2 : 1) : 0)}</output></div>`).join('')}
+    <h4>Extras</h4>
+    <div class="sl"><span>Mirror</span><select data-vp="mirror">${[['off', 'off'], ['lr', 'left ↔ right'], ['quad', 'four ways'], ['kal', 'kaleidoscope']].map(([v, l]) => `<option value="${v}"${vizPrefs.mirror === v ? ' selected' : ''}>${l}</option>`).join('')}</select><span></span></div>
+    <div class="sl"><span>Auto style</span><select data-vp="auto">${[[0, 'off'], [4, 'every 4 bars'], [8, 'every 8 bars'], [16, 'every 16 bars']].map(([v, l]) => `<option value="${v}"${+vizPrefs.auto === v ? ' selected' : ''}>${l}</option>`).join('')}</select><span></span></div>
+    <h4>Show</h4><div class="tg">${tg('handles', 'handles')}${tg('knotMarks', 'knots')}${tg('labels', 'pad labels')}${tg('steps', 'beat dots')}</div>
+    <div class="vp-foot"><button data-vp-reset>reset all</button><button data-vp-randcol>random colours</button></div>`;
+}
+function vizTogglePrefs(open){
+  const el = $('#vizPrefs'); if (!el) return;
+  open = open ?? el.hidden; if (open) drawVizPrefs(); el.hidden = !open;
+  $('#vizPrefsBtn').setAttribute('aria-expanded', open);
+}
+document.addEventListener('input', ev => {
+  const t = ev.target; if (!t.closest || !t.closest('#vizPrefs')) return;
+  if (t.dataset.vpcol) { vizPrefs.col[t.dataset.vpcol] = t.value; }
+  else if (t.dataset.vp) {
+    const k = t.dataset.vp;
+    vizPrefs[k] = t.type === 'checkbox' ? t.checked : t.type === 'range' ? +t.value : k === 'auto' ? +t.value : t.value;
+    if (t.type === 'range') { const sl = VIZ_SLIDERS.find(x => x[0] === k); t.nextElementSibling.textContent = (+t.value).toFixed(sl[4] < 1 ? (sl[4] < 0.1 ? 2 : 1) : 0); }
+    if (k === 'knots') vizVectorInit();
+  }
+  vizApplyColours(); vizSavePrefs();
+});
+document.addEventListener('change', ev => { if (ev.target.closest && ev.target.closest('#vizPrefs') && ev.target.type === 'checkbox') { vizPrefs[ev.target.dataset.vp] = ev.target.checked; vizSavePrefs(); } });
 function showVisuals(){
   const on = view === 'visuals', sec = $('#visuals');
   document.body.classList.toggle('view-visuals', on);
@@ -1701,7 +1767,7 @@ function showVisuals(){
   sec.querySelectorAll('[data-vizlines]').forEach(b => b.setAttribute('aria-checked', b.dataset.vizlines === viz.lines));
   
   const cs = getComputedStyle(document.documentElement);
-  for (const g of VIZ_G) viz.col[g] = cs.getPropertyValue('--' + g.toLowerCase()).trim() || '#ff5a1f';
+  vizApplyColours();
   vizResize();
   if (!viz.raf) { viz.last = performance.now(); viz.raf = requestAnimationFrame(vizFrame); }
   return true;
@@ -1714,6 +1780,19 @@ function vizResize(){
 }
 window.addEventListener('resize', () => { if (view === 'visuals') vizResize(); });
 document.addEventListener('fullscreenchange', () => { if (view === 'visuals') setTimeout(vizResize, 50); });
+function vizHsl(h, s, l){
+  s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+  const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))))).toString(16).padStart(2, '0');
+  return '#' + f(0) + f(8) + f(4);
+}
+// turn a colour round the colour wheel by deg degrees
+function vizHueShift(hex, deg){
+  const n = parseInt(hex.replace('#', ''), 16); let r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  let h = 0, s = 0;
+  if (d) { s = d / (1 - Math.abs(2 * l - 1)); h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; }
+  return vizHsl(((h + deg) % 360 + 360) % 360, s * 100, l * 100);
+}
 function vizRgba(hex, a){
   const h = hex.replace('#', ''); const n = parseInt(h.length === 3 ? h.split('').map(x => x + x).join('') : h, 16);
   return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
@@ -1727,32 +1806,37 @@ function vizNote(g, vel, pitch, pad){
   const v = Math.max(0.2, Math.min(1, (vel || 100) / 127)), W = viz.W, H = viz.H;
   viz.lastHit = performance.now();
   const slot = vizSlot(g, pad, pitch), col = vizShade(viz.col[g], slot.pad), pos = slot.ty;
-  slot.lv = Math.max(slot.lv || 0, v);
+  slot.lv = Math.max(slot.lv || 0, Math.min(1.2, v * vizPrefs.size * vizRnd(vizPrefs.sizeRand)));
   const py = pitch == null ? 0.5 : 1 - Math.max(0, Math.min(1, (pitch - 36) / 60));
   if (viz.style === 'vector') {
     vizVectorHit(slot, v, pitch);
   } else if (viz.style === 'bloom') {
-    const x = W * (0.06 + 0.88 * pos) + (Math.random() - .5) * W * 0.04, y = H * (0.2 + py * 0.6) + (Math.random() - .5) * H * 0.06;
-    const sc = viz.lines === 'pad' ? 0.75 : 1;
-    viz.items.push({ k: 'ring', col, x, y, r: 6 + v * 20, vr: (140 + v * 380) * sc, life: 1, decay: 0.75 + (1 - v) * 0.5, w: 2 + v * 10 * sc });
-    viz.items.push({ k: 'dot', col, x, y, r: (10 + v * 60) * sc, life: 1, decay: 2.2 });
+    const pr = vizPrefs.posRand, x = W * (0.06 + 0.88 * pos) + (Math.random() - .5) * W * 0.14 * pr, y = H * (0.2 + py * 0.6) + (Math.random() - .5) * H * 0.3 * pr;
+    const sc = (viz.lines === 'pad' ? 0.75 : 1) * vizPrefs.size * vizRnd(vizPrefs.sizeRand);
+    viz.items.push({ k: 'ring', col, x, y, r: 6 + v * 20, vr: (140 + v * 380) * sc * vizPrefs.energy, life: 1, decay: (0.75 + (1 - v) * 0.5) * vizPrefs.decay, w: 2 + v * 10 * sc });
+    viz.items.push({ k: 'dot', col, x, y, r: (10 + v * 60) * sc, life: 1, decay: 2.2 * vizPrefs.decay });
   } else if (viz.style === 'burst') {
-    const a0 = (viz.lines === 'pad' ? pos : (VIZ_G.indexOf(g) + 0.5) / 4) * Math.PI * 2 - Math.PI / 2, cx = W / 2 + Math.cos(a0) * W * 0.16, cy = H / 2 + Math.sin(a0) * H * 0.24;
-    const n = Math.round(10 + v * 34);
+    const pr = vizPrefs.posRand, a0 = (viz.lines === 'pad' ? pos : (VIZ_G.indexOf(g) + 0.5) / 4) * Math.PI * 2 - Math.PI / 2 + (Math.random() - .5) * pr * 1.2, rr = vizRnd(pr * 0.6), cx = W / 2 + Math.cos(a0) * W * 0.16 * rr, cy = H / 2 + Math.sin(a0) * H * 0.24 * rr;
+    const n = Math.round((10 + v * 34) * Math.min(2, vizPrefs.size));
     for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2, sp = (80 + Math.random() * 420) * (0.5 + v);
-      viz.items.push({ k: 'spark', col, x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 1.5 + Math.random() * 3.5 * v, life: 1, decay: 0.6 + Math.random() * 0.8 });
+      const a = Math.random() * Math.PI * 2, sp = (80 + Math.random() * 420) * (0.5 + v) * vizPrefs.energy;
+      viz.items.push({ k: 'spark', col, x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: (1.5 + Math.random() * 3.5 * v) * vizPrefs.size * vizRnd(vizPrefs.sizeRand), life: 1, decay: (0.6 + Math.random() * 0.8) * vizPrefs.decay });
     }
   } else {
-    viz.items.push({ k: 'drop', col, slot, y: H * (0.15 + py * 0.6), r: 4 + v * 10, life: 1, decay: 1.4 });
+    viz.items.push({ k: 'drop', col, slot, dx: (Math.random() - .5) * vizPrefs.posRand * 0.8, y: H * (0.15 + py * 0.6) + (Math.random() - .5) * H * 0.3 * vizPrefs.posRand, r: (4 + v * 10) * vizPrefs.size * vizRnd(vizPrefs.sizeRand), life: 1, decay: 1.4 * vizPrefs.decay });
   }
   if (viz.items.length > 1600) viz.items.splice(0, viz.items.length - 1600);
 }
 // Clock: every beat a pulse, every bar a bigger one
 function vizBeat(bar){
   if (view !== 'visuals') return;
-  viz.flash = Math.max(viz.flash, bar ? 1 : 0.45);
-  if (viz.style === 'vector' && viz.padPaths) for (const path of vizPaths()) for (const k of path.knots) k.va += (Math.random() - .5) * (bar ? 3 : 1.2);
+  viz.flash = Math.max(viz.flash, (bar ? 1 : 0.45) * vizPrefs.pulse);
+  if (bar && vizPrefs.auto > 0 && ++viz.bars % vizPrefs.auto === 0) {
+    const order = ['vector', 'bloom', 'burst', 'bars'];
+    viz.style = order[(order.indexOf(viz.style) + 1) % order.length]; viz.items = [];
+    document.querySelectorAll('[data-viz]').forEach(x => x.setAttribute('aria-checked', x.dataset.viz === viz.style));
+  }
+  if (viz.style === 'vector' && viz.padPaths) for (const path of vizPaths()) for (const k of path.knots) k.va += (Math.random() - .5) * (bar ? 3 : 1.2) * vizPrefs.pulse;
 }
 // Vector: four bezier curves (one per group), each with knots and handles like in a drawing program.
 // Every knot is a spring around a slowly drifting rest point; notes push the knots of their group.
@@ -1764,7 +1848,7 @@ function vizKnots(n){
 // and fade out after a while without notes.
 function vizPaths(){
   if (viz.lines === 'pad') return [...viz.padPaths.values()];
-  if (!viz.groupPaths) viz.groupPaths = VIZ_G.map((g, gi) => ({ key: g, g, pad: null, knots: vizKnots(VIZ_KNOTS), y: 0.2 + gi * 0.2, ty: 0.2 + gi * 0.2, alpha: 1, last: 0, lv: 0 }));
+  if (!viz.groupPaths) viz.groupPaths = VIZ_G.map((g, gi) => ({ key: g, g, pad: null, knots: vizKnots(Math.round(vizPrefs.knots) + 2), y: 0.2 + gi * 0.2, ty: 0.2 + gi * 0.2, alpha: 1, last: 0, lv: 0 }));
   return viz.groupPaths;
 }
 function vizVectorInit(){ viz.groupPaths = null; viz.padPaths = new Map(); }
@@ -1774,13 +1858,13 @@ function vizSlot(g, pad, pitch){
   if (viz.lines !== 'pad') return vizPaths()[VIZ_G.indexOf(g)];
   const key = g + (pad == null ? '?' + (pitch ?? 0) : pad);
   let path = viz.padPaths.get(key);
-  if (!path) { path = { key, g, pad, knots: vizKnots(5), y: 0.5, ty: 0.5, alpha: 0, last: 0, lv: 0 }; viz.padPaths.set(key, path); vizLayoutPads(); path.y = path.ty; }
+  if (!path) { path = { key, g, pad, knots: vizKnots(Math.round(vizPrefs.knots)), y: 0.5, ty: 0.5, alpha: 0, last: 0, lv: 0 }; viz.padPaths.set(key, path); vizLayoutPads(); path.y = path.ty; }
   path.last = performance.now();
   return path;
 }
 function vizVectorHit(path, v, pitch){
   const kn = path.knots, i = pitch == null ? Math.floor(Math.random() * kn.length) : pitch % kn.length;
-  const sc = viz.lines === 'pad' ? 0.6 : 1;
+  const sc = (viz.lines === 'pad' ? 0.6 : 1) * vizPrefs.energy * vizRnd(vizPrefs.sizeRand);
   for (const [j, f] of [[i, 1], [i - 1, .4], [i + 1, .4]]) {
     const k = kn[j]; if (!k) continue;
     k.vy += (Math.random() < .5 ? -1 : 1) * v * f * 900 * sc; k.vx += (Math.random() - .5) * v * f * 500 * sc;
@@ -1813,7 +1897,7 @@ function vizSlotsTick(dt){
     }
     if (changed) vizLayoutPads();
   }
-  for (const p of vizPaths()) { p.y += (p.ty - p.y) * Math.min(1, dt * 3); p.lv = Math.max(0, (p.lv || 0) - dt * 1.8); }
+  for (const p of vizPaths()) { p.y += (p.ty - p.y) * Math.min(1, dt * 3); p.lv = Math.max(0, (p.lv || 0) - dt * 1.8 * vizPrefs.decay); }
 }
 function vizVectorDraw(ctx, dt, W, H, active){
   if (!viz.padPaths) vizVectorInit();
@@ -1826,25 +1910,28 @@ function vizVectorDraw(ctx, dt, W, H, active){
       k.vx += (-60 * k.ox - 7 * k.vx) * dt; k.vy += (-60 * k.oy - 7 * k.vy) * dt;
       k.ox += k.vx * dt; k.oy += k.vy * dt;
       k.va += (-8 * k.a - 3 * k.va) * dt + Math.sin(t * 0.7 + k.ph) * 0.4 * dt; k.a += k.va * dt;
-      const rest = many ? 34 : 60;
+      const rest = (many ? 34 : 60) * vizPrefs.size;
       k.vl += (-30 * (k.l - rest) - 6 * k.vl) * dt; k.l = Math.max(6, k.l + k.vl * dt);
-      const bx = W * (0.06 + 0.88 * i / (kn.length - 1)) + Math.sin(t * 0.21 + k.ph) * W * 0.02;
-      const by = H * path.y + Math.sin(t * 0.37 + k.ph + i * 0.9) * H * 0.07 * amp;
+      const pr = 0.3 + vizPrefs.posRand * 2.3;   // how far the rest points wander
+      const bx = W * (0.06 + 0.88 * i / (kn.length - 1)) + Math.sin(t * 0.21 + k.ph) * W * 0.02 * pr;
+      const by = H * path.y + Math.sin(t * 0.37 + k.ph + i * 0.9) * H * 0.07 * amp * pr;
       const x = bx + k.ox * amp, y = by + k.oy * amp, ca = Math.cos(k.a) * k.l, sa = Math.sin(k.a) * k.l;
       pts.push({ x, y, ix: x - ca, iy: y - sa, ox: x + ca, oy: y + sa });
     });
     if (dim <= 0.01) return;
-    ctx.strokeStyle = vizRgba(col, 0.95 * dim); ctx.lineWidth = many ? 1.6 : 2.2;
+    ctx.strokeStyle = vizRgba(col, 0.95 * dim); ctx.lineWidth = vizPrefs.line * (many ? 0.75 : 1);
     ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i++) ctx.bezierCurveTo(pts[i - 1].ox, pts[i - 1].oy, pts[i].ix, pts[i].iy, pts[i].x, pts[i].y);
     ctx.stroke();
-    ctx.strokeStyle = `rgba(255,255,255,${(many ? 0.22 : 0.35) * dim})`; ctx.lineWidth = 1;
-    for (const p of pts) { ctx.beginPath(); ctx.moveTo(p.ix, p.iy); ctx.lineTo(p.ox, p.oy); ctx.stroke(); }
-    const hr = many ? 2.2 : 3, kr = many ? 3 : 4;
-    ctx.fillStyle = '#09090b'; ctx.strokeStyle = `rgba(255,255,255,${0.7 * dim})`;
-    for (const p of pts) for (const [hx, hy] of [[p.ix, p.iy], [p.ox, p.oy]]) { ctx.beginPath(); ctx.arc(hx, hy, hr, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
-    for (const p of pts) { ctx.fillStyle = '#09090b'; ctx.fillRect(p.x - kr, p.y - kr, kr * 2, kr * 2); ctx.strokeStyle = vizRgba(col, dim); ctx.lineWidth = 1.5; ctx.strokeRect(p.x - kr, p.y - kr, kr * 2, kr * 2); }
-    if (path.pad != null && viz.lines === 'pad') { ctx.fillStyle = vizRgba(col, 0.8 * dim); ctx.font = '11px "IBM Plex Mono", monospace'; ctx.fillText(path.g + ' ' + (KO2Lib.PAD_LABELS[path.pad] ?? path.pad), 8, pts[0].y - 8); }
+    const hr = many ? 2.2 : 3, kr = (many ? 3 : 4) * Math.sqrt(vizPrefs.size);
+    if (vizPrefs.handles) {
+      ctx.strokeStyle = vizRgba(vizPrefs.accent, (many ? 0.22 : 0.35) * dim); ctx.lineWidth = 1;
+      for (const p of pts) { ctx.beginPath(); ctx.moveTo(p.ix, p.iy); ctx.lineTo(p.ox, p.oy); ctx.stroke(); }
+      ctx.fillStyle = vizPrefs.bg; ctx.strokeStyle = vizRgba(vizPrefs.accent, 0.7 * dim);
+      for (const p of pts) for (const [hx, hy] of [[p.ix, p.iy], [p.ox, p.oy]]) { ctx.beginPath(); ctx.arc(hx, hy, hr, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    }
+    if (vizPrefs.knotMarks) for (const p of pts) { ctx.fillStyle = vizPrefs.bg; ctx.fillRect(p.x - kr, p.y - kr, kr * 2, kr * 2); ctx.strokeStyle = vizRgba(col, dim); ctx.lineWidth = 1.5; ctx.strokeRect(p.x - kr, p.y - kr, kr * 2, kr * 2); }
+    if (vizPrefs.labels && path.pad != null && viz.lines === 'pad') { ctx.fillStyle = vizRgba(col, 0.8 * dim); ctx.font = '11px "IBM Plex Mono", monospace'; ctx.fillText(path.g + ' ' + (KO2Lib.PAD_LABELS[path.pad] ?? path.pad), 8, pts[0].y - 8); }
   });
 }
 function vizFrame(){
@@ -1853,7 +1940,10 @@ function vizFrame(){
   if (view !== 'visuals') return;
   const c = $('#vizCanvas'); if (!c) return;
   const ctx = c.getContext('2d'), dt = Math.max(0, Math.min(0.05, (now - viz.last) / 1000)), W = viz.W, H = viz.H;
-  viz.last = now; viz.t += dt;
+  viz.last = now; viz.t += dt * vizPrefs.drift;
+  if (vizPrefs.hue > 0 && viz.base) { viz.hueDeg = ((viz.hueDeg || 0) + dt * vizPrefs.hue * 60) % 360; for (const g of VIZ_G) viz.col[g] = vizHueShift(viz.base[g], viz.hueDeg); }
+  else if (viz.base && viz.hueDeg) { viz.hueDeg = 0; for (const g of VIZ_G) viz.col[g] = viz.base[g]; }
+  ctx.shadowBlur = 0;
   ctx.setTransform(viz.dpr, 0, 0, viz.dpr, 0, 0);
   const active = follow.running || !!playing;
   $('#vizIdle').classList.toggle('off', active || now - viz.lastHit < 3000);
@@ -1861,14 +1951,17 @@ function vizFrame(){
   if (info) info.textContent = follow.running ? `K.O. II playing · bar ${Math.floor(follow.clocks / 96) + 1} · beat ${Math.floor(follow.clocks / 24) % 4 + 1}` : playing ? 'The tool is playing' : 'Press play on the K.O. II';
   // background: trails for burst, clean for the others; a soft glow on beats
   ctx.globalCompositeOperation = 'source-over';
-  ctx.fillStyle = viz.style === 'burst' ? 'rgba(9,9,11,0.22)' : '#09090b';
+  const trail = viz.style === 'burst' ? Math.max(vizPrefs.trails, 0.78) : vizPrefs.trails;
+  ctx.fillStyle = vizRgba(vizPrefs.bg, 1 - trail);
   ctx.fillRect(0, 0, W, H);
   if (viz.flash > 0.01) {
     const gr = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
-    gr.addColorStop(0, `rgba(255,255,255,${0.10 * viz.flash})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    gr.addColorStop(0, vizRgba(vizPrefs.accent, Math.min(0.3, 0.10 * viz.flash))); gr.addColorStop(1, vizRgba(vizPrefs.accent, 0));
     ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
   }
   vizSlotsTick(dt);
+  // glow: a soft halo around everything drawn from here on
+  if (vizPrefs.glow > 0) { ctx.shadowBlur = vizPrefs.glow * 28; ctx.shadowColor = vizRgba(vizPrefs.accent, 0.35 + vizPrefs.glow * 0.4); }
   if (viz.style === 'vector') { ctx.globalCompositeOperation = 'source-over'; vizVectorDraw(ctx, dt, W, H, active); }
   // idle: four slow breathing dots in the group colours
   if (!active && viz.style !== 'vector') VIZ_G.forEach((g, i) => {
@@ -1887,11 +1980,11 @@ function vizFrame(){
       const x = i * bw + bw * 0.18, w = bw * 0.64, rad = Math.min(14, w / 2);
       ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, H - h, w, h + rad, rad) : ctx.rect(x, H - h, w, h); ctx.fill();
       ctx.fillStyle = vizRgba(col, (0.12 + lv * 0.25) * al); ctx.fillRect(i * bw, 0, bw, H);
-      if (sl.pad != null) { ctx.fillStyle = vizRgba(col, 0.8 * al); ctx.font = '11px "IBM Plex Mono", monospace'; ctx.textAlign = 'center'; ctx.fillText(sl.g + ' ' + (KO2Lib.PAD_LABELS[sl.pad] ?? sl.pad), sl.bx, 18); ctx.textAlign = 'left'; }
+      if (vizPrefs.labels && sl.pad != null) { ctx.fillStyle = vizRgba(col, 0.8 * al); ctx.font = '11px "IBM Plex Mono", monospace'; ctx.textAlign = 'center'; ctx.fillText(sl.g + ' ' + (KO2Lib.PAD_LABELS[sl.pad] ?? sl.pad), sl.bx, 18); ctx.textAlign = 'left'; }
     });
   }
   // the beat: 16 steps along the bottom, the current one lit
-  if (follow.running) {
+  if (follow.running && vizPrefs.steps) {
     const step = Math.floor(follow.clocks / 6) % 16;
     for (let i = 0; i < 16; i++) {
       ctx.fillStyle = i === step ? 'rgba(255,255,255,0.85)' : (i % 4 === 0 ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.09)');
@@ -1899,7 +1992,10 @@ function vizFrame(){
     }
   }
   const keep = [];
+  // glow on hundreds of sparks is slow: then only the bigger shapes glow
+  const sparkGlow = vizPrefs.glow > 0 && viz.items.length < 300 ? ctx.shadowBlur : 0, glowAll = ctx.shadowBlur;
   for (const it of viz.items) {
+    ctx.shadowBlur = it.k === 'spark' ? sparkGlow : glowAll;
     it.life -= dt * it.decay; if (it.life <= 0) continue; keep.push(it);
     const col = it.col;
     if (it.k === 'ring') {
@@ -1914,11 +2010,33 @@ function vizFrame(){
       const drag = Math.pow(0.12, dt); it.vx *= drag; it.vy *= drag; it.x += it.vx * dt; it.y += it.vy * dt;
       ctx.fillStyle = vizRgba(col, it.life); ctx.beginPath(); ctx.arc(it.x, it.y, it.r * (0.4 + it.life), 0, Math.PI * 2); ctx.fill();
     } else if (it.k === 'drop') {
-      const dx = it.slot.bx ?? W / 2;
+      const dx = (it.slot.bx ?? W / 2) + (it.dx || 0) * (it.slot.bw || W / 4);
       ctx.fillStyle = vizRgba(col, it.life); ctx.beginPath(); ctx.arc(dx, it.y - (1 - it.life) * 40, it.r * it.life + 2, 0, Math.PI * 2); ctx.fill();
     }
   }
   viz.items = keep;
+  ctx.shadowBlur = 0;
+  // mirror: copy one half (or quarter / slice) over the rest
+  const m = vizPrefs.mirror, dpr = viz.dpr;
+  if (m && m !== 'off') {
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
+    const cw = c.width, ch = c.height;
+    if (m === 'kal') {
+      // six slices around the middle, every other one mirrored
+      const src = viz.kal || (viz.kal = document.createElement('canvas')); if (src.width !== cw || src.height !== ch) { src.width = cw; src.height = ch; } const sx = src.getContext('2d'); sx.clearRect(0, 0, cw, ch); sx.drawImage(c, 0, 0);
+      ctx.fillStyle = vizPrefs.bg; ctx.fillRect(0, 0, cw, ch);
+      const R = Math.hypot(cw, ch) / 2;
+      for (let i = 0; i < 6; i++) {
+        ctx.save(); ctx.translate(cw / 2, ch / 2); ctx.rotate(i * Math.PI / 3); if (i % 2) ctx.scale(1, -1);
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, R, -Math.PI / 6, Math.PI / 6); ctx.closePath(); ctx.clip();
+        ctx.drawImage(src, -cw / 2, -ch / 2); ctx.restore();
+      }
+    } else {
+      ctx.translate(cw, 0); ctx.scale(-1, 1); ctx.drawImage(c, 0, 0, cw / 2, ch, 0, 0, cw / 2, ch); ctx.setTransform(1, 0, 0, 1, 0, 0);
+      if (m === 'quad') { ctx.translate(0, ch); ctx.scale(1, -1); ctx.drawImage(c, 0, 0, cw, ch / 2, 0, 0, cw, ch / 2); }
+    }
+    ctx.restore();
+  }
   viz.flash = Math.max(0, viz.flash - dt * 3);
   viz.raf = requestAnimationFrame(vizFrame);
 }
@@ -1928,6 +2046,10 @@ document.addEventListener('click', ev => {
   if (b) { viz.style = b.dataset.viz; viz.items = []; try { localStorage.setItem('ko2-viz', viz.style); } catch {} document.querySelectorAll('[data-viz]').forEach(x => x.setAttribute('aria-checked', x.dataset.viz === viz.style));  return; }
   const ln = ev.target.closest('[data-vizlines]');
   if (ln) { viz.lines = ln.dataset.vizlines; try { localStorage.setItem('ko2-vizlines', viz.lines); } catch {} document.querySelectorAll('[data-vizlines]').forEach(x => x.setAttribute('aria-checked', x.dataset.vizlines === viz.lines)); return; }
+  if (ev.target.closest('#vizPrefsBtn') || ev.target.closest('#vizGear')) { vizTogglePrefs(); return; }
+  if (ev.target.closest('[data-vp-close]')) { vizTogglePrefs(false); return; }
+  if (ev.target.closest('[data-vp-reset]')) { vizPrefs = JSON.parse(JSON.stringify(VIZ_DEFAULTS)); vizSavePrefs(); vizApplyColours(); vizVectorInit(); drawVizPrefs(); return; }
+  if (ev.target.closest('[data-vp-randcol]')) { const h0 = Math.random() * 360; VIZ_G.forEach((g, i) => { vizPrefs.col[g] = vizHsl((h0 + i * (60 + Math.random() * 50)) % 360, 70 + Math.random() * 25, 55 + Math.random() * 12); }); vizSavePrefs(); vizApplyColours(); drawVizPrefs(); return; }
   if (ev.target.closest('#vizFull')) { const st = $('#vizStage'); if (document.fullscreenElement) document.exitFullscreen(); else if (st.requestFullscreen) st.requestFullscreen(); }
 });
 // Mobile: the bar folds into a menu (☰)
