@@ -85,7 +85,8 @@ td.dim{color:var(--muted)}
 .pat[draggable="true"]{cursor:grab}
 .pat.drop,.grow.drop{outline:2px dashed var(--orange);outline-offset:2px}
 .edit{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;min-height:58px;align-content:center}
-.edhint{flex:1 1 300px}
+.qhelp{width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:var(--bg);color:var(--muted);font:600 12px var(--mono);cursor:pointer;display:inline-grid;place-items:center;padding:0;margin-left:auto}
+.qhelp:hover{color:var(--ink);border-color:var(--ink)}
 @media (max-width:1200px){.roll .edit{min-height:94px}}
 @media (max-width:760px){.roll .edit{min-height:150px}}
 .edit .qz{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap;padding-left:8px;border-left:1px solid var(--line)}
@@ -850,7 +851,7 @@ function drawRoll(g){
         <label>Pitch <select id="edPitch">${Array.from({ length: 97 }, (_, i) => i + 12).map(m => `<option value="${m}"${m === n[4] ? ' selected' : ''}>${noteName(m)}${m === 60 ? ' (root)' : ''}</option>`).join('')}</select></label>
         <label>Velocity <input id="edVel" type="number" min="1" max="127" value="${n[3]}" style="width:4.5em"></label>
         <label>Length (steps) <input id="edLen" type="number" min="1" max="${bars * 16}" value="${Math.max(1, Math.round(n[2] / 24))}" style="width:4.5em"></label>
-        <button class="play del" id="edDel">✕ delete note</button>` : `<span class="stat edhint">Click to add a note · drag to move · drag the right edge for length · Alt = off the grid · <button class="linkbtn" data-help="edit notes">more…</button></span>`}
+        <button class="play del" id="edDel">✕ delete note</button>` : ``}<button class="qhelp" data-help="edit notes" title="Click to add a note · drag to move · drag the right edge for length · Alt = off the grid. Click for the full how-to." aria-label="How to edit notes">?</button>
     </div>`;
   } else if (!x.notes) { el.innerHTML = h + `<p class="none">This pattern has no notes yet. Click "edit notes" to add some.</p>`; return; }
   h += `<div class="rollscroll"><div class="rollgrid${editing ? ' editing' : ''}" data-len="${len}" style="--gc:${GC[x.g]}"><div class="playhead" hidden></div><div class="lab" style="height:18px"></div><div class="ruler">`;
