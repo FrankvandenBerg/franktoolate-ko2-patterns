@@ -87,7 +87,8 @@ td.dim{color:var(--muted)}
 .edit{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;min-height:58px;align-content:center}
 .edhint{flex:1 1 300px}
 /* Sounds: the search bar floats under the top bar while you scroll */
-.t-del:hover{color:var(--orange)}
+.t-del{margin-left:auto;background:none;border:0;padding:3px;line-height:0;color:var(--muted);cursor:pointer;border-radius:4px}
+.t-del:hover{color:var(--orange);background:rgba(255,90,31,.1)}
 .snd-search{position:sticky;top:calc(var(--abh,56px) + 6px);z-index:30;background:var(--panel);margin:0 -18px;padding:8px 18px;min-height:0;border-bottom:1px solid transparent;transition:box-shadow .2s,border-color .2s}
 .snd-search.stuck{border-bottom-color:var(--line);box-shadow:0 6px 12px -8px rgba(0,0,0,.25)}
 .songclock{width:22ch;text-align:left;white-space:nowrap;flex:none;font-variant-numeric:tabular-nums;background:none;border:0;padding:0;font:13px var(--mono);color:var(--muted);cursor:pointer;display:inline-block;overflow:hidden;vertical-align:bottom;perspective:200px}
@@ -1372,7 +1373,7 @@ function renderSounds(){
         : `<span>${x.name ? esc(x.name) : '<span class="none">(no name)</span>'}</span>${dev ? `<button class="snd-edit" data-sedit="${x.node}" title="Rename this sound on the K.O. II" aria-label="Rename sound ${x.slot}">✎</button>` : ''}`}</div>
       <div class="t-meta">${x.seconds.toFixed(2)} s · ${x.channels === 2 ? 'stereo' : 'mono'}${x.mode ? ' · ' + x.mode : ''}</div>
       <div class="t-use" title="${used.join(', ')}">${used.length ? '● ' + used.slice(0, 2).join(', ') + (used.length > 2 ? ' +' + (used.length - 2) : '') : ''}</div>
-      <div class="t-acts">${dev ? `<button class="t-share" data-move="${x.slot}" title="Move this sound to another group on the K.O. II (you can also drag the tile)">⇄ move</button><button class="t-share t-del" data-sdel="${x.slot}" title="Delete this sound from the K.O. II">✕ delete</button>` : ''}${canShare(x) && dev ? `<button class="t-share" data-share="${x.node}" title="Share this sound with everyone who uses the tool">↗ share</button>` : ''}</div>
+      <div class="t-acts">${dev ? `<button class="t-share" data-move="${x.slot}" title="Move this sound to another group on the K.O. II (you can also drag the tile)">⇄ move</button>` : ''}${canShare(x) && dev ? `<button class="t-share" data-share="${x.node}" title="Share this sound with everyone who uses the tool">↗ share</button>` : ''}${dev ? `<button class="t-del" data-sdel="${x.slot}" title="Delete this sound from the K.O. II" aria-label="Delete sound ${x.slot}"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg></button>` : ''}</div>
     </div>`;
   };
   h += groups.map(g => {
