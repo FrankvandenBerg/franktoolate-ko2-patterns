@@ -532,7 +532,7 @@
               if (pos >= len || off + pos < 0 || off + pos >= segTicks) continue;
               // default: trigger the pad by the note map; a hook can route pitched notes elsewhere
               const m = (this.noteFor && this.noteFor(p.g, pad, pitch)) || { ch: 0, note: NOTE_BASE[p.g] + (PAD_NOTE_OFFSET[pad] ?? pad) };
-              events.push({ t: segStart + off + pos, g: p.g, ch: m.ch, note: m.note, vel: Math.max(1, Math.min(127, vel)), dur: Math.max(dur, 12) });
+              events.push({ t: segStart + off + pos, g: p.g, pad, ch: m.ch, note: m.note, vel: Math.max(1, Math.min(127, vel)), dur: Math.max(dur, 12) });
             }
           }
         }
@@ -557,7 +557,7 @@
           if (!this.muted.has(e.g)) {
             this.output.send([0x90 | (e.ch || 0), e.note, e.vel], at);
             this.output.send([0x80 | (e.ch || 0), e.note, 0], at + e.dur * this.msPerTick);
-            if (this.onNote) { const g = e.g, v = e.vel, n = e.note; setTimeout(() => this.onNote(g, v, n), Math.max(0, at - performance.now())); }
+            if (this.onNote) { const g = e.g, v = e.vel, n = e.note, pd = e.pad; setTimeout(() => this.onNote(g, v, n, pd), Math.max(0, at - performance.now())); }
           }
           if (++this.idx >= events.length) { this.idx = 0; this.loop++; if (this.once) break; }
         }
