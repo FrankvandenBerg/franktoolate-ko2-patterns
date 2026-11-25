@@ -87,6 +87,7 @@ td.dim{color:var(--muted)}
 .edit{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:var(--mono);font-size:12px;min-height:58px;align-content:center}
 .edhint{flex:1 1 300px}
 /* Sounds: the search bar floats under the top bar while you scroll */
+.t-del:hover{color:var(--orange)}
 .snd-search{position:sticky;top:calc(var(--abh,56px) + 6px);z-index:30;background:var(--panel);margin:0 -18px;padding:8px 18px;min-height:0;border-bottom:1px solid transparent;transition:box-shadow .2s,border-color .2s}
 .snd-search.stuck{border-bottom-color:var(--line);box-shadow:0 6px 12px -8px rgba(0,0,0,.25)}
 .songclock{width:22ch;text-align:left;white-space:nowrap;flex:none;font-variant-numeric:tabular-nums;background:none;border:0;padding:0;font:13px var(--mono);color:var(--muted);cursor:pointer;display:inline-block;overflow:hidden;vertical-align:bottom;perspective:200px}
@@ -105,6 +106,9 @@ td.dim{color:var(--muted)}
 .pending ul{margin:0;padding-left:18px;font-family:var(--mono);font-size:12px;line-height:1.6}
 .pending .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .btn.small{padding:6px 12px;font-size:13px}
+.btn.danger{background:var(--orange);border-color:var(--orange);color:#fff}
+#modal p.warn{color:var(--orange)}
+#modal label.chk{display:flex;gap:8px;align-items:center;margin:8px 0}
 .song{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .pos{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:5px;padding:5px 8px;background:var(--bg);display:flex;gap:6px;align-items:baseline}
 .pos .k{color:var(--muted);font-size:10px}
@@ -1071,8 +1075,9 @@ async function writeProject(){
     status(`Backing up project ${p.p}…`);
     await dev.fsInit();
     const now = await dev.get(p.node, (g, t) => progress(g / t * 0.3));
-    await storeBackup(p, now, 'before write');
-    if (!sameBytes(now, p.orig)) throw new Error(`Project ${p.p} has changed on the K.O. II since it was read. Nothing was written; a backup of its current state was stored. Connect again to load the current project.`);
+    // the backup uploads while the project is written (it is in memory already)
+    const bk = storeBackup(p, now, 'before write');
+    if (!sameBytes(now, p.orig)) { await bk; throw new Error(`Project ${p.p} has changed on the K.O. II since it was read. Nothing was written; a backup of its current state was stored. Connect again to load the current project.`); }
     let active = null;
     try { active = (await dev.metadata(projDirNode)).active ?? null; } catch {}
     status(`Writing project ${p.p}…`);
@@ -1096,7 +1101,9 @@ async function writeProject(){
     status('Verifying…');
     const back = await dev.get(p.node, (g, t) => progress(0.8 + g / t * 0.2));
     progress(null);
+    await bk;
     if (!sameBytes(back, p.tar)) throw new Error('Verification failed: what the K.O. II returns differs from what was written. Restore the stored backup if needed (backups button).');
+    toolMade.set(p.p, back);
     // the K.O. II plays the active project from memory: tell it to load the new version
     // ask the device to reload the active project; it may take its time to answer, so don't wait for it
     if (active === p.node) dev.setMetadata(projDirNode, { active: p.node }, { quiet: true, timeout: 5000 }).catch(() => {});
@@ -1219,7 +1226,12 @@ async function loadSounds(sndDir){
   }
 }
 // ---- Backups: stored on the server per user, device and project ----
+// What the tool itself last left on the K.O. II, per project. A backup of exactly that state is not needed:
+// the backup from before the tool's own change already covers it. So a series of edits (auto-write)
+// gives one backup, and a new one is made only when the project changed on the device itself.
+const toolMade = new Map();
 async function storeBackup(p, bytes, note){
+  if (toolMade.has(p.p) && sameBytes(bytes, toolMade.get(p.p))) return 'skipped';
   try {
     await api(`api/backups?device=${encodeURIComponent(deviceSerial || 'unknown')}&project=${encodeURIComponent(p.p)}&note=${encodeURIComponent(note)}`,
       { method: 'POST', body: bytes, headers: { 'Content-Type': 'application/octet-stream' } });
@@ -1281,6 +1293,7 @@ async function assignChannels(i = cur, auto = false){
     }
     await dev.fsInit();
     const tar = await dev.get(p.node);
+    toolMade.set(p.p, tar);
     DATA[i] = makeProject(p.p, tar, p.node);
     const padLabel = k => `${k[0].toUpperCase()} pad ${KO2Lib.PAD_LABELS[+k.slice(1) - 1]}`;
     status(`${auto ? 'New melody found: ' : ''}gave ${plan.assign.map(a => padLabel(a.k) + ' channel ' + a.ch).join(', ')} in project ${p.p}, so the tool plays its pitches.`);
@@ -1295,8 +1308,8 @@ async function openBackups(){
     const rows = backups.map(b => `<tr><td class="mono">${b.created_at.slice(0, 16)} UTC</td><td>${b.note || ''}</td><td class="mono">${Math.round(b.size / 1024)} KB</td>
       <td><a class="play" href="${KO_BASE}/api/backups/${b.id}" download>download</a> <button class="play" data-restore="${b.id}" data-when="${b.created_at.slice(0, 16)}">restore…</button></td></tr>`).join('');
     modal(`Backups of project ${p.p}`, backups.length
-      ? `<p class="stat">The tool stores the project here before every write. The newest 25 per project are kept.</p><div class="tbl"><table><thead><tr><th>When</th><th>Note</th><th>Size</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
-      : '<p class="none">No backups yet. One is stored automatically before every write to the K.O. II.</p>');
+      ? `<p class="stat">The tool stores the project here before it first changes it, and again whenever the project was changed on the K.O. II itself in between. A series of edits (auto-write) gives one backup. The newest 25 per project are kept.</p><div class="tbl"><table><thead><tr><th>When</th><th>Note</th><th>Size</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : '<p class="none">No backups yet. One is stored automatically before the tool first changes this project.</p>');
   } catch (e) { modal('Backups', `<p class="err">${e.message === 'offline' ? 'Backups are kept on the server; this local copy of the tool has no server.' : 'Could not load the backups: ' + e.message}</p>`); }
 }
 async function restoreBackup(id, when){
@@ -1345,7 +1358,7 @@ function renderSounds(){
   if (!sounds.length) { card.innerHTML = h + `<p class="none">Connect the K.O. II to read its sound library.</p>`; return; }
   h += `<div class="edit snd-search"><label>Search <span class="qwrap"><input id="sndQ" type="text" value="${esc(soundsQuery)}" placeholder="name or slot" style="width:14em"><button type="button" id="sndQClear" title="Clear the search" aria-label="Clear the search" ${soundsQuery ? '' : 'hidden'}>✕</button></span></label>
     <label>Show <select id="sndF">${['all', 'used', 'unused', ...kinds].map(k => `<option value="${k}"${k === soundsFilter ? ' selected' : ''}>${k}</option>`).join('')}</select></label>
-    <span class="stat">${list.length} shown · click a tile to hear it on the K.O. II</span></div>`;
+    <span class="stat">${list.length} shown · click a tile to hear it on the K.O. II</span>${lastDeleted && dev ? `<button class="play" data-sundo title="Put the deleted sound back in slot ${fmtSlot(lastDeleted.x.slot)}">↶ restore ${fmtSlot(lastDeleted.x.slot)} "${esc(lastDeleted.x.name || '')}"</button>` : ''}</div>`;
   const groups = [];
   for (const x of list) { const k = soundKind(x.slot); let g = groups.find(z => z.kind === k); if (!g) groups.push(g = { kind: k, items: [] }); g.items.push(x); }
   if (dev && !q && soundsFilter === 'all') for (const k of Object.keys(KIND_RANGE)) if (!groups.some(g => g.kind === k)) groups.push({ kind: k, items: [] });
@@ -1359,7 +1372,7 @@ function renderSounds(){
         : `<span>${x.name ? esc(x.name) : '<span class="none">(no name)</span>'}</span>${dev ? `<button class="snd-edit" data-sedit="${x.node}" title="Rename this sound on the K.O. II" aria-label="Rename sound ${x.slot}">✎</button>` : ''}`}</div>
       <div class="t-meta">${x.seconds.toFixed(2)} s · ${x.channels === 2 ? 'stereo' : 'mono'}${x.mode ? ' · ' + x.mode : ''}</div>
       <div class="t-use" title="${used.join(', ')}">${used.length ? '● ' + used.slice(0, 2).join(', ') + (used.length > 2 ? ' +' + (used.length - 2) : '') : ''}</div>
-      <div class="t-acts">${dev ? `<button class="t-share" data-move="${x.slot}" title="Move this sound to another group on the K.O. II (you can also drag the tile)">⇄ move</button>` : ''}${canShare(x) && dev ? `<button class="t-share" data-share="${x.node}" title="Share this sound with everyone who uses the tool">↗ share</button>` : ''}</div>
+      <div class="t-acts">${dev ? `<button class="t-share" data-move="${x.slot}" title="Move this sound to another group on the K.O. II (you can also drag the tile)">⇄ move</button><button class="t-share t-del" data-sdel="${x.slot}" title="Delete this sound from the K.O. II">✕ delete</button>` : ''}${canShare(x) && dev ? `<button class="t-share" data-share="${x.node}" title="Share this sound with everyone who uses the tool">↗ share</button>` : ''}</div>
     </div>`;
   };
   h += groups.map(g => {
@@ -1438,6 +1451,7 @@ async function moveSound(from, to){
     for (const i of touched) {
       const p = DATA[i]; await dev.fsInit();
       const tar = await dev.get(p.node);
+      toolMade.set(p.p, tar);
       DATA[i] = { ...makeProject(p.p, tar, p.node), changes: p.changes.length ? p.changes : [] };
       if (p.node === deviceActiveNode) dev.setMetadata(projDirNode, { active: p.node }, { quiet: true, timeout: 5000 }).catch(() => {});
     }
@@ -1448,10 +1462,73 @@ async function moveSound(from, to){
   } catch (e) { status(`Could not move ${lbl}: ${e.message || e}. The original in slot ${fmtSlot(from)} is kept.`, true); }
   renderSounds();
 }
+// Delete a sound from the K.O. II. The tool keeps the sound in memory first, so it can be put back
+// (↶ restore) during this visit, and by default also saves a copy to your computer.
+let lastDeleted = null;
+function askDelete(slot){
+  const x = sounds.find(s => s.slot === slot); if (!x) return;
+  const used = soundUsage()[slot] || [];
+  modal(`Delete sound ${fmtSlot(slot)}?`, `<p><b>${fmtSlot(slot)} "${esc(x.name || '')}"</b> (${soundKind(slot)}, ${x.seconds ? x.seconds.toFixed(1) + ' s' : ''}) is removed from the K.O. II.</p>
+    ${used.length ? `<p class="warn">It is used by ${used.length} pad${used.length === 1 ? '' : 's'}: ${used.join(', ')}. Those pads will be silent until you give them another sound.</p>` : '<p>No pad in your projects uses it.</p>'}
+    <label class="chk"><input type="checkbox" id="delCopy" checked> Save a copy to my computer first (.pcm sound + .json settings)</label>
+    <p class="stat">Until you leave the page you can also put it back with ↶ restore.</p>
+    <div class="row"><button class="btn small danger" id="doDelete" data-slot="${slot}">Delete</button><button class="btn small sec" data-modal-close>Cancel</button></div>`);
+}
+async function deleteSound(slot, saveCopy){
+  const x = sounds.find(s => s.slot === slot); closeModal();
+  if (!x || !dev || follow.running || busyNow()) return;
+  const lbl = `${fmtSlot(slot)} "${x.name || ''}"`;
+  writing = true; updBusy();
+  try {
+    status(`Deleting ${lbl}: keeping a copy…`);
+    await dev.fsInit();
+    const meta = await dev.metadata(slot), pcm = await dev.get(slot);
+    if (!pcm || !pcm.length) throw new Error('could not read the sound first, so nothing was deleted');
+    lastDeleted = { x: { ...x }, meta, pcm };
+    if (saveCopy) {
+      const base = `KO2-sound-${fmtSlot(slot)}${x.name ? '-' + x.name.replace(/[^\w.-]+/g, '_') : ''}`;
+      saveFile(pcm, base + '.pcm');
+      saveFile(new TextEncoder().encode(JSON.stringify({ slot, name: x.name, meta }, null, 2)), base + '.json');
+    }
+    status(`Deleting ${lbl}…`);
+    await dev.deleteFile(slot);
+    await dev.fsInit();
+    const left = await dev.ls(sndDirNode);
+    if (left.some(e => e.node === slot)) throw new Error('the K.O. II still lists it');
+    sounds = sounds.filter(s => s.slot !== slot);
+    try { await api('api/sounds?device=' + encodeURIComponent(deviceSerial), { method: 'POST', body: JSON.stringify({ sounds }) }); } catch {}
+    status(`Deleted ${lbl}. Click ↶ restore to put it back.`);
+  } catch (e) { status(`Could not delete ${lbl}: ${e.message || e}`, true); }
+  writing = false; updBusy();
+  renderSounds();
+}
+async function restoreDeleted(){
+  const d = lastDeleted; if (!d || !dev || follow.running || busyNow()) return;
+  const slot = d.x.slot, lbl = `${fmtSlot(slot)} "${d.x.name || ''}"`;
+  if (sounds.some(s => s.slot === slot)) { status(`Slot ${fmtSlot(slot)} is in use again, so ${lbl} can't go back there.`, true); return; }
+  writing = true; updBusy();
+  try {
+    status(`Putting ${lbl} back…`);
+    await dev.fsInit();
+    await dev.put(d.pcm, fmtSlot(slot) + '.pcm', sndDirNode, slot);
+    await setSoundMeta(slot, d.meta);
+    await dev.fsInit();
+    if (!sameBytes(await dev.get(slot), d.pcm)) throw new Error('the sound on the K.O. II is not the same');
+    sounds.push(d.x); sounds.sort((a, b) => a.slot - b.slot);
+    try { await api('api/sounds?device=' + encodeURIComponent(deviceSerial), { method: 'POST', body: JSON.stringify({ sounds }) }); } catch {}
+    lastDeleted = null;
+    status(`${lbl} is back in slot ${fmtSlot(slot)}; pads that used it play it again.`);
+  } catch (e) { status(`Could not put ${lbl} back: ${e.message || e}`, true); }
+  writing = false; updBusy();
+  renderSounds();
+}
 document.addEventListener('click', ev => {
   const t = ev.target; if (!t.closest) return; let b;
   if ((b = t.closest('#sndQClear'))) { ev.preventDefault(); soundsQuery = ''; renderSounds(); const q = $('#sndQ'); if (q) q.focus(); }
   else if ((b = t.closest('[data-move]'))) askMove(+b.dataset.move);
+  else if ((b = t.closest('[data-sdel]'))) askDelete(+b.dataset.sdel);
+  else if ((b = t.closest('#doDelete'))) deleteSound(+b.dataset.slot, !!($('#delCopy') || {}).checked);
+  else if (t.closest('[data-sundo]')) restoreDeleted();
   else if ((b = t.closest('#doMove'))) moveSound(+b.dataset.from, +$('#mvSlot').value);
 });
 document.addEventListener('change', ev => {
