@@ -1813,7 +1813,7 @@ function vizNote(g, vel, pitch, pad){
   } else if (viz.style === 'bloom') {
     const pr = vizPrefs.posRand, x = W * (0.06 + 0.88 * pos) + (Math.random() - .5) * W * 0.14 * pr, y = H * (0.2 + py * 0.6) + (Math.random() - .5) * H * 0.3 * pr;
     const sc = (viz.lines === 'pad' ? 0.75 : 1) * vizPrefs.size * vizRnd(vizPrefs.sizeRand);
-    viz.items.push({ k: 'ring', col, x, y, r: 6 + v * 20, vr: (140 + v * 380) * sc * vizPrefs.energy, life: 1, decay: (0.75 + (1 - v) * 0.5) * vizPrefs.decay, w: 2 + v * 10 * sc });
+    viz.items.push({ k: 'ring', col, x, y, r: (14 + v * 36) * sc, vr: (140 + v * 380) * sc * vizPrefs.energy, life: 1, decay: (0.75 + (1 - v) * 0.5) * vizPrefs.decay, w: 2 + v * 10 * sc });
     viz.items.push({ k: 'dot', col, x, y, r: (10 + v * 60) * sc, life: 1, decay: 2.2 * vizPrefs.decay });
   } else if (viz.style === 'burst') {
     const pr = vizPrefs.posRand, a0 = (viz.lines === 'pad' ? pos : (VIZ_G.indexOf(g) + 0.5) / 4) * Math.PI * 2 - Math.PI / 2 + (Math.random() - .5) * pr * 1.2, rr = vizRnd(pr * 0.6), cx = W / 2 + Math.cos(a0) * W * 0.16 * rr, cy = H / 2 + Math.sin(a0) * H * 0.24 * rr;
@@ -1867,8 +1867,10 @@ function vizVectorHit(path, v, pitch){
   const sc = (viz.lines === 'pad' ? 0.6 : 1) * vizPrefs.energy * vizRnd(vizPrefs.sizeRand);
   for (const [j, f] of [[i, 1], [i - 1, .4], [i + 1, .4]]) {
     const k = kn[j]; if (!k) continue;
-    k.vy += (Math.random() < .5 ? -1 : 1) * v * f * 900 * sc; k.vx += (Math.random() - .5) * v * f * 500 * sc;
-    k.va += (Math.random() - .5) * v * f * 10; k.vl += v * f * 420 * sc;
+    // part of the push is applied at once (no build-up), the rest as speed
+    const dy = (Math.random() < .5 ? -1 : 1) * v * f * 900 * sc, dx = (Math.random() - .5) * v * f * 500 * sc;
+    k.oy += dy * 0.06; k.ox += dx * 0.06; k.vy += dy * 0.7; k.vx += dx * 0.7;
+    k.va += (Math.random() - .5) * v * f * 10; k.l += v * f * 25 * sc; k.vl += v * f * 300 * sc;
   }
 }
 // spread the pad lines evenly from top to bottom, in group and pad order
@@ -1939,7 +1941,7 @@ function vizFrame(){
   viz.raf = 0;
   if (view !== 'visuals') return;
   const c = $('#vizCanvas'); if (!c) return;
-  const ctx = c.getContext('2d'), dt = Math.max(0, Math.min(0.05, (now - viz.last) / 1000)), W = viz.W, H = viz.H;
+  const ctx = viz.ctx || (viz.ctx = c.getContext('2d', { desynchronized: true }) || c.getContext('2d')), dt = Math.max(0, Math.min(0.05, (now - viz.last) / 1000)), W = viz.W, H = viz.H;
   viz.last = now; viz.t += dt * vizPrefs.drift;
   if (vizPrefs.hue > 0 && viz.base) { viz.hueDeg = ((viz.hueDeg || 0) + dt * vizPrefs.hue * 60) % 360; for (const g of VIZ_G) viz.col[g] = vizHueShift(viz.base[g], viz.hueDeg); }
   else if (viz.base && viz.hueDeg) { viz.hueDeg = 0; for (const g of VIZ_G) viz.col[g] = viz.base[g]; }
@@ -2145,7 +2147,7 @@ function onDeviceMidi(d){
   }
   else if (st === 0xF2) { follow.clocks = ((d[2] << 7) | d[1]) * 6; songTrackFromSpp(); }
   else if (st === 0xF8) { if (follow.running) { follow.clocks++; if (follow.clocks % 96 === 0) songTrackBar(); if (follow.clocks % 24 === 0) vizBeat(follow.clocks % 96 === 0); scheduleFollowFrame(); } }
-  else if ((st & 0xF0) === 0x90 && d[2] > 0) { follow.lastNote = performance.now(); if (follow.running) heardNote(d[1]); const [gN, pN] = notePad(d[1], (st & 15) + 1); vuHit(gN, d[2]); vizNote(gN, d[2], d[1], pN); }
+  else if ((st & 0xF0) === 0x90 && d[2] > 0) { follow.lastNote = performance.now(); const [gN, pN] = notePad(d[1], (st & 15) + 1); vizNote(gN, d[2], d[1], pN); vuHit(gN, d[2]); if (follow.running) heardNote(d[1]); }
 }
 // Scene bridge: the K.O. II does not say which scene it plays, but it sends every note it plays
 // (with its pitch) in time with its clock. Compare the last notes with what each scene would play
@@ -2280,7 +2282,11 @@ function heardNote(pitch){
   follow.heard.push({ pitch, t });
   // keep the last four bars of notes
   follow.heard = follow.heard.filter(h => t - h.t <= 4 * TPB).slice(-200);
-  if (!follow.followScenes || follow.heard.length < 5) return;
+  if (!follow.followScenes || follow.heard.length < 5 || follow.recog) return;
+  // judging the scene is heavier work: at most every 50 ms, so notes and the visuals are never held up
+  follow.recog = setTimeout(() => { follow.recog = 0; if (follow.running) recogniseScene(); }, 50);
+}
+function recogniseScene(){
   const p = DATA[cur]; if (!p) return;
   const scored = sceneIndex(p).map(sc => ({ n: sc.n, score: sceneScore(sc, follow.heard) }));
   scored.sort((a, b) => b.score - a.score);
