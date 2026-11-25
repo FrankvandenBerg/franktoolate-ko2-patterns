@@ -440,7 +440,7 @@ body.ko-busy :is([data-play],[data-snd],.tile-hit):not([aria-pressed="true"]){op
       <button class="play" id="vizPrefsBtn" aria-expanded="false" aria-controls="vizPrefs" title="Colours, randomness and more">⚙ settings</button><button class="play" id="vizFull" title="Full screen (Esc to leave)">⤢ full screen</button>
     </div>
     <div class="viz-stage" id="vizStage"><canvas id="vizCanvas"></canvas><div class="viz-idle" id="vizIdle">Press ▶ on the K.O. II</div><button class="viz-gear" id="vizGear" title="Settings" aria-label="Settings">⚙</button><div class="viz-prefs" id="vizPrefs" hidden></div></div>
-    <p class="stat">Reacts to the notes and the clock the K.O. II sends over USB (and to the tool's own playback). Each group has its colour; louder notes make bigger moves, every beat and bar gives a pulse. Per group or per pad: one shape (line, bloom, burst or bar) for each group, or for each pad that plays. Vector: curves drawn like in a vector program with its knots and handles; the notes push the knots around.</p>
+    <p class="stat">Reacts to the notes and the clock the K.O. II sends over USB (and to the tool's own playback). Each group has its colour; louder notes make bigger moves, every beat and bar gives a pulse. Per group or per pad: one shape (line, bloom, burst or bar) for each group, or for each pad that plays. Vector: curves drawn like in a vector program with its knots and handles; the notes push the knots around. Drag a knot to move it, or a handle end to turn and stretch it; they stay where you leave them (settings → reset knots puts them back).</p>
   </section>
   <p class="foot">Patterns are numbered 01–99 per group (A–D), as in the Teenage Engineering guide. "b" is the pattern length in bars (1 bar = 384 ticks at 96 ppqn), "n" the number of notes. Pads are named by the labels printed on them (7 8 9 / 4 5 6 / 1 2 3 / . 0 ENTER). Left/right arrows switch scene (also while a scene plays), keys 1–9 switch project, space plays or stops the selected scene. Moving: drag a pattern onto another pattern to swap them, or onto a group to move it there; within a group, scenes follow along. Deleting a pattern leaves its group silent in scenes that used it; clearing a scene also removes it from the song. Playback sends MIDI notes on channel 1 (group A = notes 36–47, B = 48–59, C = 60–71, D = 72–83, in the order . 0 ENTER 1–9); do not leave the K.O. II in record mode, or the notes will be recorded. Pads in keys mode play at their root note.</p>
   <footer class="legal">K.O. II Patterns is an independent project. It is not affiliated with, endorsed by or supported by Teenage Engineering. "Teenage Engineering", "EP-133" and "K.O. II" are their trademarks and are only used to describe compatibility. · <a href="privacy">Privacy</a> · <a href="terms">Terms</a> · <a href="about">About</a> · <a href="https://github.com/FrankvandenBerg/franktoolate-ko2-patterns" target="_blank" rel="noopener">Source code (AGPL-3.0)</a></footer>
@@ -1738,7 +1738,7 @@ function drawVizPrefs(){
     <div class="sl"><span>Mirror</span><select data-vp="mirror">${[['off', 'off'], ['lr', 'left ↔ right'], ['quad', 'four ways'], ['kal', 'kaleidoscope']].map(([v, l]) => `<option value="${v}"${vizPrefs.mirror === v ? ' selected' : ''}>${l}</option>`).join('')}</select><span></span></div>
     <div class="sl"><span>Auto style</span><select data-vp="auto">${[[0, 'off'], [4, 'every 4 bars'], [8, 'every 8 bars'], [16, 'every 16 bars']].map(([v, l]) => `<option value="${v}"${+vizPrefs.auto === v ? ' selected' : ''}>${l}</option>`).join('')}</select><span></span></div>
     <h4>Show</h4><div class="tg">${tg('handles', 'handles')}${tg('knotMarks', 'knots')}${tg('labels', 'pad labels')}${tg('steps', 'beat dots')}</div>
-    <div class="vp-foot"><button data-vp-reset>reset all</button><button data-vp-randcol>random colours</button></div>`;
+    <div class="vp-foot"><button data-vp-reset>reset all</button><button data-vp-randcol>random colours</button><button data-vp-knots title="Put every knot and handle you moved back">reset knots</button></div>`;
 }
 function vizTogglePrefs(open){
   const el = $('#vizPrefs'); if (!el) return;
@@ -1901,6 +1901,45 @@ function vizSlotsTick(dt){
   }
   for (const p of vizPaths()) { p.y += (p.ty - p.y) * Math.min(1, dt * 3); p.lv = Math.max(0, (p.lv || 0) - dt * 1.8 * vizPrefs.decay); }
 }
+// Grab a knot (move it) or a handle end (turn and stretch it) with the mouse; it stays where you leave it.
+let vizDrag = null;
+function vizPick(mx, my){
+  if (viz.style !== 'vector' || !viz.padPaths) return null;
+  let best = null, bd = 14 * 14;
+  for (const path of vizPaths()) {
+    if (path.alpha < 0.3) continue;
+    for (const k of path.knots) {
+      if (k.sx == null) continue;
+      const cand = [['knot', k.sx, k.sy]];
+      if (vizPrefs.handles) cand.push(['in', k.hix, k.hiy], ['out', k.hox, k.hoy]);
+      for (const [part, x, y] of cand) { const d = (x - mx) ** 2 + (y - my) ** 2; if (d < bd || (d === bd && part === 'knot')) { bd = d; best = { k, part }; } }
+    }
+  }
+  return best;
+}
+function vizMouse(ev){ const r = $('#vizCanvas').getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; }
+document.addEventListener('pointerdown', ev => {
+  if (ev.target.id !== 'vizCanvas') return;
+  const [mx, my] = vizMouse(ev), hit = vizPick(mx, my); if (!hit) return;
+  vizDrag = { ...hit, id: ev.pointerId }; ev.target.setPointerCapture(ev.pointerId); ev.target.style.cursor = 'grabbing'; ev.preventDefault();
+});
+document.addEventListener('pointermove', ev => {
+  if (ev.target.id !== 'vizCanvas' && !vizDrag) return;
+  const c = $('#vizCanvas'); if (!c || view !== 'visuals') return;
+  const [mx, my] = vizMouse(ev);
+  if (!vizDrag) { c.style.cursor = vizPick(mx, my) ? 'grab' : ''; return; }
+  const k = vizDrag.k;
+  if (vizDrag.part === 'knot') {
+    // move the rest point itself, so the knot stays here when you let go
+    k.rx = (mx - (k.bx - (k.rx || 0) * viz.W)) / viz.W; k.ry = (my - (k.by - (k.ry || 0) * viz.H)) / viz.H;
+    k.bx = k.sx = mx; k.by = k.sy = my;
+    k.ox = k.oy = k.vx = k.vy = 0;
+  } else {
+    const dx = mx - k.sx, dy = my - k.sy, sg = vizDrag.part === 'out' ? 1 : -1;
+    k.a = k.ra = Math.atan2(sg * dy, sg * dx); k.l = k.rl = Math.max(6, Math.hypot(dx, dy)); k.va = k.vl = 0;
+  }
+});
+document.addEventListener('pointerup', () => { if (vizDrag) { vizDrag = null; const c = $('#vizCanvas'); if (c) c.style.cursor = ''; } });
 function vizVectorDraw(ctx, dt, W, H, active){
   if (!viz.padPaths) vizVectorInit();
   const t = viz.t;
@@ -1909,15 +1948,21 @@ function vizVectorDraw(ctx, dt, W, H, active){
     const dim = (active ? 1 : 0.55) * path.alpha, col = vizShade(viz.col[path.g], path.pad), kn = path.knots, pts = [];
     const amp = many ? 0.6 / Math.sqrt(paths.length / 4) : 1;
     kn.forEach((k, i) => {
-      k.vx += (-60 * k.ox - 7 * k.vx) * dt; k.vy += (-60 * k.oy - 7 * k.vy) * dt;
-      k.ox += k.vx * dt; k.oy += k.vy * dt;
-      k.va += (-8 * k.a - 3 * k.va) * dt + Math.sin(t * 0.7 + k.ph) * 0.4 * dt; k.a += k.va * dt;
-      const rest = (many ? 34 : 60) * vizPrefs.size;
-      k.vl += (-30 * (k.l - rest) - 6 * k.vl) * dt; k.l = Math.max(6, k.l + k.vl * dt);
+      const held = vizDrag && vizDrag.k === k;
+      if (!held) {
+        k.vx += (-60 * k.ox - 7 * k.vx) * dt; k.vy += (-60 * k.oy - 7 * k.vy) * dt;
+        k.ox += k.vx * dt; k.oy += k.vy * dt;
+        k.va += (-8 * (k.a - (k.ra || 0)) - 3 * k.va) * dt + Math.sin(t * 0.7 + k.ph) * 0.4 * dt; k.a += k.va * dt;
+        const rest = k.rl || (many ? 34 : 60) * vizPrefs.size;
+        k.vl += (-30 * (k.l - rest) - 6 * k.vl) * dt; k.l = Math.max(6, k.l + k.vl * dt);
+      }
       const pr = 0.3 + vizPrefs.posRand * 2.3;   // how far the rest points wander
-      const bx = W * (0.06 + 0.88 * i / (kn.length - 1)) + Math.sin(t * 0.21 + k.ph) * W * 0.02 * pr;
-      const by = H * path.y + Math.sin(t * 0.37 + k.ph + i * 0.9) * H * 0.07 * amp * pr;
+      // rest point; a knot you moved with the mouse keeps its new place (rx/ry, as part of the screen)
+      const bx = W * (0.06 + 0.88 * i / (kn.length - 1) + (k.rx || 0)) + Math.sin(t * 0.21 + k.ph) * W * 0.02 * pr;
+      const by = H * (path.y + (k.ry || 0)) + Math.sin(t * 0.37 + k.ph + i * 0.9) * H * 0.07 * amp * pr;
+      k.bx = bx; k.by = by; k.amp = amp;
       const x = bx + k.ox * amp, y = by + k.oy * amp, ca = Math.cos(k.a) * k.l, sa = Math.sin(k.a) * k.l;
+      k.sx = x; k.sy = y; k.hix = x - ca; k.hiy = y - sa; k.hox = x + ca; k.hoy = y + sa;
       pts.push({ x, y, ix: x - ca, iy: y - sa, ox: x + ca, oy: y + sa });
     });
     if (dim <= 0.01) return;
@@ -2051,6 +2096,7 @@ document.addEventListener('click', ev => {
   if (ev.target.closest('#vizPrefsBtn') || ev.target.closest('#vizGear')) { vizTogglePrefs(); return; }
   if (ev.target.closest('[data-vp-close]')) { vizTogglePrefs(false); return; }
   if (ev.target.closest('[data-vp-reset]')) { vizPrefs = JSON.parse(JSON.stringify(VIZ_DEFAULTS)); vizSavePrefs(); vizApplyColours(); vizVectorInit(); drawVizPrefs(); return; }
+  if (ev.target.closest('[data-vp-knots]')) { vizVectorInit(); return; }
   if (ev.target.closest('[data-vp-randcol]')) { const h0 = Math.random() * 360; VIZ_G.forEach((g, i) => { vizPrefs.col[g] = vizHsl((h0 + i * (60 + Math.random() * 50)) % 360, 70 + Math.random() * 25, 55 + Math.random() * 12); }); vizSavePrefs(); vizApplyColours(); drawVizPrefs(); return; }
   if (ev.target.closest('#vizFull')) { const st = $('#vizStage'); if (document.fullscreenElement) document.exitFullscreen(); else if (st.requestFullscreen) st.requestFullscreen(); }
 });
